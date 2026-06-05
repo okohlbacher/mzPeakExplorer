@@ -34,37 +34,49 @@ export function SpectraTab() {
 
   const selRow = selectedIndex != null ? spectra[selectedIndex] : undefined;
 
-  const levels = scanned
-    ? Object.keys(msLevelCounts ?? {})
-        .map(Number)
-        .sort((a, b) => a - b)
+  // Levels known from the scan; before it runs we can't know, so offer the
+  // common levels speculatively. Always include the active filter so the
+  // dropdown shows the current selection even when the file has none of it.
+  const knownLevels = scanned
+    ? Object.keys(msLevelCounts ?? {}).map(Number)
     : [1, 2, 3];
+  const levelSet = new Set(knownLevels);
+  if (msLevelFilter != null) levelSet.add(msLevelFilter);
+  const levels = [...levelSet].sort((a, b) => a - b);
   const levelOptions = [
     { value: "all", label: `All${scanned ? ` (${numSpectra.toLocaleString()})` : ""}` },
     ...levels.map((lvl) => {
-      const c = msLevelCounts?.[lvl];
+      const c = msLevelCounts?.[lvl] ?? 0;
       return {
         value: String(lvl),
-        label: `MS${lvl}${c ? ` (${c.toLocaleString()})` : ""}`,
-        disabled: scanned && !c,
+        label: `MS${lvl}${scanned ? ` (${c.toLocaleString()})` : ""}`,
       };
     }),
   ];
 
   // When an MS level is selected, the index + counter are relative to that level.
-  const filtered =
-    msLevelFilter != null ? spectra.filter((r) => r.msLevel === msLevelFilter) : null;
-  const usingFilter = filtered != null && filtered.length > 0;
-  const total = usingFilter ? filtered.length : n;
+  const filtering = msLevelFilter != null;
+  const filtered = filtering ? spectra.filter((r) => r.msLevel === msLevelFilter) : null;
+  // Resolving = filter chosen but the scan that knows MS levels hasn't finished.
+  const resolving = filtering && !scanned;
+  // No matches = the file genuinely has no spectra at the chosen level.
+  const noMatches = filtering && scanned && (filtered?.length ?? 0) === 0;
+  const usingFilter = filtering && (filtered?.length ?? 0) > 0;
+  const total = filtering ? filtered?.length ?? 0 : n;
   const pos = usingFilter
-    ? Math.max(0, filtered.findIndex((r) => r.index === selectedIndex))
+    ? Math.max(0, filtered!.findIndex((r) => r.index === selectedIndex))
     : selectedIndex ?? 0;
+  const navDisabled = resolving || noMatches;
 
   return (
     <div className="browse">
       <div className="browse-controls">
         <div className="control-row">
-          <Button size="sm" disabled={pos <= 0} onClick={() => void stepSpectrum(-1)}>
+          <Button
+            size="sm"
+            disabled={navDisabled || pos <= 0}
+            onClick={() => void stepSpectrum(-1)}
+          >
             ‹ Prev
           </Button>
           <TextField
@@ -72,17 +84,27 @@ export function SpectraTab() {
             type="number"
             width="4.5rem"
             min={0}
-            max={total - 1}
-            value={pos}
-            suffix={`of ${total - 1}`}
+            max={Math.max(0, total - 1)}
+            value={navDisabled ? 0 : pos}
+            disabled={navDisabled}
+            suffix={`of ${Math.max(0, total - 1)}`}
             onChange={(e) => {
               const v = Number(e.target.value);
+              if (!usingFilter && !filtering) {
+                if (!Number.isFinite(v) || v < 0 || v >= total) return;
+                void selectSpectrum(v);
+                return;
+              }
+              if (!usingFilter) return;
               if (!Number.isFinite(v) || v < 0 || v >= total) return;
-              const targetIdx = usingFilter ? filtered[v].index : v;
-              void selectSpectrum(targetIdx);
+              void selectSpectrum(filtered![v].index);
             }}
           />
-          <Button size="sm" disabled={pos >= total - 1} onClick={() => void stepSpectrum(1)}>
+          <Button
+            size="sm"
+            disabled={navDisabled || pos >= total - 1}
+            onClick={() => void stepSpectrum(1)}
+          >
             Next ›
           </Button>
         </div>
@@ -95,7 +117,35 @@ export function SpectraTab() {
         />
       </div>
 
-      <div className="data-stage">
+      {resolving ? (
+        <div className="data-stage">
+          <div className="stage-plot">
+            <p className="stage-hint" style={{ padding: "1.4rem 0.2rem" }}>
+              Resolving MS levels — scanning the per-spectrum index…
+            </p>
+          </div>
+        </div>
+      ) : noMatches ? (
+        <div className="data-stage">
+          <div className="stage-plot">
+            <p className="stage-hint" style={{ padding: "1.4rem 0.2rem" }}>
+              <strong style={{ color: "var(--text-heading)" }}>
+                No MS{msLevelFilter} spectra in this file.
+              </strong>{" "}
+              This file contains{" "}
+              {levels
+                .filter((l) => (msLevelCounts?.[l] ?? 0) > 0)
+                .map((l) => `MS${l}`)
+                .join(", ") || "no level-tagged"}{" "}
+              spectra.{" "}
+              <button className="link-btn" onClick={() => void setMsLevelFilter(null)}>
+                Show all spectra
+              </button>
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="data-stage">
         <div className="stage-plot">
           <h4 className="stage-h">
             Spectrum
@@ -125,9 +175,10 @@ export function SpectraTab() {
             double-click to reset
           </p>
         </div>
-      </div>
+        </div>
+      )}
 
-      {selectedMeta != null && (
+      {!navDisabled && selectedMeta != null && (
         <details style={{ marginTop: "0.1rem" }}>
           <summary
             style={{

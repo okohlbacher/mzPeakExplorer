@@ -28,6 +28,11 @@ let reader: Reader | null = null;
 // a newer file has superseded it and bail out instead of clobbering state.
 let loadGen = 0;
 
+// The single in-flight per-spectrum scan, shared so concurrent callers (the
+// auto-scan on open, "Build TIC", and the MS-level filter) all await the SAME
+// pass instead of each kicking off a duplicate or no-oping while one is running.
+let scanInFlight: Promise<void> | null = null;
+
 export type Tab = "summary" | "metadata" | "spectra" | "chromatograms";
 export type ChromMode = "tic" | "xic";
 
@@ -134,11 +139,11 @@ export const useStore = create<State & Actions>((set, get) => ({
     await load(set, get, name, null, () => openUrl(url));
   },
 
-  // Run the per-spectrum scan on demand (the "Compute breakdown" / "Build TIC"
-  // paths). No-op if it's already running or done for the current file.
+  // Run the per-spectrum scan on demand (the "Compute breakdown" / "Build TIC" /
+  // MS-level filter paths). Awaits the in-flight scan if one is already running,
+  // so callers reliably have the Browse index when this resolves.
   async computeBreakdown() {
-    if (!reader || get().scanning || get().scanned) return;
-    await runScan(set, get, reader, loadGen);
+    await ensureScan(set, get);
   },
 
   // Lazily load the Browse tab's first spectrum on first visit. Loads ONE
@@ -195,11 +200,16 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async setMsLevelFilter(level) {
-    // Filtering needs each spectrum's MS level — that comes from the scan.
-    if (level !== null && !get().scanned) await get().computeBreakdown();
+    // Reflect the choice immediately (the dropdown + "Resolving…" state), then
+    // ensure the scan that knows each spectrum's MS level has completed.
     set({ msLevelFilter: level });
     if (level === null) return;
-    // If the current spectrum isn't on the chosen level, jump to the first that is.
+    if (!get().scanned) await get().computeBreakdown();
+    // Ignore if the user changed the filter again while the scan ran.
+    if (get().msLevelFilter !== level) return;
+    // If the current spectrum isn't on the chosen level, jump to the first that
+    // is (no-op when the file has no spectra at this level — the tab shows an
+    // explicit empty state rather than silently reverting to all spectra).
     const rows = get().spectra;
     const cur = get().selectedIndex;
     const curRow = cur != null ? rows[cur] : undefined;
@@ -274,6 +284,7 @@ async function load(
   open: () => Promise<Reader>,
 ): Promise<void> {
   const gen = ++loadGen;
+  scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
   set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize });
   try {
     // Open reads only metadata + parquet footers — never the signal data.
@@ -303,7 +314,7 @@ async function load(
     // quick and fills MS levels / ranges / the TIC); large files wait for an
     // explicit "Compute breakdown" / "Build TIC" so opening stays instant.
     if (summary.numSpectra > 0 && summary.numSpectra <= AUTO_SCAN_LIMIT) {
-      void runScan(set, get, reader, gen);
+      void ensureScan(set, get);
     }
   } catch (err) {
     if (gen !== loadGen) return;
@@ -314,6 +325,28 @@ async function load(
 
 /** Below this spectrum count, scan automatically on open; above it, on demand. */
 const AUTO_SCAN_LIMIT = 50_000;
+
+/**
+ * Start the per-spectrum scan if it isn't running or already done, and return a
+ * promise that resolves when it finishes. Deduplicates: every caller awaits the
+ * same in-flight pass rather than racing duplicate scans (or no-oping while one
+ * runs, which previously left the MS-level filter acting on an empty index).
+ */
+function ensureScan(
+  set: (partial: Partial<State>) => void,
+  get: () => State & Actions,
+): Promise<void> {
+  if (!reader || get().scanned) return Promise.resolve();
+  if (!scanInFlight) {
+    const r = reader;
+    const gen = loadGen;
+    const p = runScan(set, get, r, gen).finally(() => {
+      if (scanInFlight === p) scanInFlight = null;
+    });
+    scanInFlight = p;
+  }
+  return scanInFlight;
+}
 
 /**
  * The time-sliced per-spectrum scan. Guarded against a newer load superseding

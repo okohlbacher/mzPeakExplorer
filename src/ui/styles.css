@@ -289,6 +289,19 @@ table.data td.mono,
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-btn:hover {
+  color: var(--accent-active);
+}
 .hint {
   color: var(--muted);
   font-size: var(--text-sm);

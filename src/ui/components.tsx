@@ -345,6 +345,7 @@ export function TextField({
   min,
   max,
   step,
+  disabled,
   style,
 }: {
   label?: string;
@@ -358,11 +359,12 @@ export function TextField({
   min?: number;
   max?: number;
   step?: number | string;
+  disabled?: boolean;
   style?: CSSProperties;
 }) {
   const [focus, setFocus] = useState(false);
   return (
-    <label style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", ...style }}>
+    <label style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", opacity: disabled ? 0.5 : 1, ...style }}>
       {label && <span style={{ fontSize: "var(--text-label)", color: "var(--text-muted)" }}>{label}</span>}
       <span
         style={{
@@ -387,6 +389,7 @@ export function TextField({
           min={min}
           max={max}
           step={step}
+          disabled={disabled}
           onFocus={() => setFocus(true)}
           onBlur={() => setFocus(false)}
           style={{
