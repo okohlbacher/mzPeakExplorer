@@ -1,18 +1,24 @@
 import { useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { Logo } from "./components";
 
 const DEFAULT_DEMO_URL = `${import.meta.env.BASE_URL}static/small.mzpeak`;
 
-export function FileLoader() {
+/**
+ * The idle empty state: centred OpenMS logo + intro, a large drop-zone (file
+ * picker), the bundled-demo link, and an arbitrary-URL field (preserved so the
+ * deployed demo can load by URL). Drives the store's openFile / openUrl.
+ */
+export function IdleLoader() {
   const openFile = useStore((s) => s.openFile);
   const openUrl = useStore((s) => s.openUrl);
-  const loading = useStore((s) => s.stage === "loading");
 
   const [url, setUrl] = useState(DEFAULT_DEMO_URL);
   const [over, setOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  function handle(file: File) {
+  function handle(file: File | undefined) {
+    if (!file) return;
     if (!file.name.endsWith(".mzpeak")) {
       alert("Please select a .mzpeak file.");
       return;
@@ -21,19 +27,28 @@ export function FileLoader() {
   }
 
   return (
-    <div className="loader">
+    <div style={{ maxWidth: 560, margin: "6vh auto 0", textAlign: "center" }}>
+      <div style={{ marginBottom: "1rem", display: "flex", justifyContent: "center" }}>
+        <Logo size={62} />
+      </div>
+      <h2 style={{ margin: "0 0 0.4rem", fontSize: "1.2rem", color: "var(--text-heading)", fontWeight: "var(--weight-semibold)" }}>
+        Inspect an mzPeak file
+      </h2>
+      <p style={{ margin: "0 0 1.2rem", color: "var(--text-muted)", fontSize: "var(--text-body)", lineHeight: "var(--leading-normal)" }}>
+        A lightweight, client-side explorer for the mzPeak mass-spectrometry
+        format — summary, metadata browser and a spectrum / chromatogram
+        navigator. The file never leaves your browser.
+      </p>
+
       <div
-        className={`drop-zone${over ? " over" : ""}`}
         role="button"
-        tabIndex={loading ? -1 : 0}
-        onClick={() => !loading && fileInput.current?.click()}
+        tabIndex={0}
+        onClick={() => fileInput.current?.click()}
         onKeyDown={(e) => {
-          if ((e.key === "Enter" || e.key === " ") && !loading)
-            fileInput.current?.click();
+          if (e.key === "Enter" || e.key === " ") fileInput.current?.click();
         }}
         onDragOver={(e) => {
           e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
           setOver(true);
         }}
         onDragLeave={(e) => {
@@ -43,39 +58,81 @@ export function FileLoader() {
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);
-          const f = e.dataTransfer.files[0];
-          if (f) handle(f);
+          handle(e.dataTransfer.files?.[0]);
+        }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.5rem",
+          textAlign: "center",
+          padding: "2.2rem 1rem",
+          border: `2px dashed ${over ? "var(--accent)" : "var(--border-default)"}`,
+          borderRadius: "var(--radius-lg)",
+          background: over ? "var(--accent-soft)" : "var(--surface-panel)",
+          color: over ? "var(--accent)" : "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: "var(--text-body)",
+          transition: "var(--transition-ui)",
+          userSelect: "none",
         }}
       >
-        Drop a <strong>.mzpeak</strong> file, or <u>browse</u>
+        <span>
+          Drop a <strong style={{ color: over ? "var(--accent)" : "var(--text-body)" }}>.mzpeak</strong> file, or <u>browse</u>
+        </span>
       </div>
       <input
         ref={fileInput}
         type="file"
         accept=".mzpeak"
         style={{ display: "none" }}
-        disabled={loading}
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handle(f);
+          handle(e.target.files?.[0]);
           e.target.value = "";
         }}
       />
+
+      <p style={{ marginTop: "0.8rem", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+        or{" "}
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            void openUrl(DEFAULT_DEMO_URL);
+          }}
+          style={{ color: "var(--text-link)" }}
+        >
+          load the bundled demo
+        </a>
+      </p>
+
       <form
         onSubmit={(e) => {
           e.preventDefault();
           if (url.trim()) void openUrl(url.trim());
         }}
+        style={{ display: "flex", gap: "0.4rem", marginTop: "1.4rem", justifyContent: "center" }}
       >
         <input
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://…/file.mzpeak"
-          disabled={loading}
+          aria-label="mzpeak URL"
+          style={{
+            flex: 1,
+            maxWidth: 380,
+            padding: "0.34rem 0.5rem",
+            border: "1px solid var(--border-default)",
+            borderRadius: "var(--radius-sm)",
+            font: "inherit",
+            fontSize: "var(--text-body)",
+            background: "var(--surface-card)",
+            color: "var(--text-body)",
+          }}
         />
-        <button type="submit" disabled={loading || !url.trim()}>
-          {loading ? "Loading…" : "Load URL"}
+        <button type="submit" className="primary" disabled={!url.trim()}>
+          Load URL
         </button>
       </form>
     </div>
