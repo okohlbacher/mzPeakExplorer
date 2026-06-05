@@ -1,5 +1,15 @@
 import { createRoot } from "react-dom/client";
 
+// Self-hosted IBM Plex (chrome = Sans, every measured value = Mono), bundled by
+// Vite so the deployed app needs no Google Fonts CDN.
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+import "@fontsource/ibm-plex-sans/700.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
+
 import { App } from "./ui/App";
 import "./ui/styles.css";
 
