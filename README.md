@@ -41,12 +41,23 @@ Three tabs, all driven from a single in-browser read of the file:
   collapsible **per-spectrum metadata** tree shows that scan's CV params, scans,
   precursors, and promoted columns.
 
+## Design
+
+The UI follows the **OpenMS** visual identity: a slim persistent app shell (top
+bar + fixed nav rail with a pinned file inspector) wrapping a scrolling main
+pane, OpenMS electric-blue accent, IBM Plex Sans/Mono, and a dark "data stage"
+(`#0e1216` + dot-grid) for the Browse charts. Tokens live in
+[`src/ui/tokens/`](src/ui/tokens); primitives in
+[`src/ui/components.tsx`](src/ui/components.tsx).
+
 ## Stack
 
 - **Vite 8 + React 19 + TypeScript** — static-deployable SPA.
 - **[uPlot](https://github.com/leeoniya/uPlot)** — fast canvas charts for dense
-  spectra and chromatograms.
+  spectra and chromatograms (re-themed for the dark stage in
+  [`src/ui/chartTheme.ts`](src/ui/chartTheme.ts)).
 - **zustand** — small state store.
+- **IBM Plex Sans/Mono** (self-hosted via `@fontsource`) + **lucide-react** icons.
 - **[`mzpeakts`](https://github.com/HUPO-PSI/mzpeakts)** (vendored) — the browser
   mzPeak reader (`parquet-wasm` + `apache-arrow` + `zip.js`). It is the only
   dependency that touches the (explicitly unstable) on-disk format; the entire

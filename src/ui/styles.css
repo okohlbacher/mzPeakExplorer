@@ -45,97 +45,26 @@ body {
   }
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  width: 100%;
-}
-
-/* Tab panels must never shrink to their content's min-width (which collapses the
+/* The Browse column must never shrink to content min-width (which collapses the
    flex column and zeroes the chart hosts). */
-.tab-body,
 .browse {
   width: 100%;
   min-width: 0;
-}
-.browse {
   align-items: stretch;
 }
 
-.app-header {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.app-title {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 650;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-
-.app-title .sub {
-  font-size: 0.78rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-
-/* ── File loader ───────────────────────────────────────────── */
-.loader {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.drop-zone {
-  border: 2px dashed var(--border);
-  border-radius: 6px;
-  padding: 0.55rem 1rem;
-  text-align: center;
-  background: var(--panel);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
-}
-.drop-zone.over {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.drop-zone strong {
-  color: var(--fg);
-}
-
-.loader form {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-  flex: 1;
-  min-width: 260px;
-}
-.loader input[type="text"] {
-  flex: 1;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-size: 0.83rem;
-}
-
+/* Base button = the secondary control (handoff). */
 button {
   font: inherit;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  padding: 0.34rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-body);
   cursor: pointer;
+  transition: var(--transition-ui);
 }
 button:hover:not(:disabled) {
   border-color: var(--accent);
@@ -157,42 +86,6 @@ button.primary:hover:not(:disabled) {
   filter: none;
 }
 
-/* ── Tabs ──────────────────────────────────────────────────── */
-.tabbar {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0 1rem;
-  border-bottom: 1px solid var(--border);
-}
-.tab {
-  padding: 0.55rem 1rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  border-radius: 0;
-  color: var(--muted);
-  font-weight: 500;
-}
-.tab:hover {
-  color: var(--fg);
-}
-.tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.tab-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 1rem 1.25rem;
-}
-
-.empty {
-  color: var(--muted);
-  padding: 2rem;
-  text-align: center;
-}
 
 .banner-error {
   margin: 0.75rem 1rem;
