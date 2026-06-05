@@ -9,6 +9,14 @@ Everything runs **client-side**: no upload, no backend. The file's bytes never
 leave the browser (local files are read in place; URLs are fetched with HTTP
 range requests). It deploys as a static site.
 
+**Live demo:** https://okohlbacher.github.io/mzPeakExplorer/
+
+Opening a file reads **metadata and table counts only** — the overview appears in
+a couple of seconds even for multi-gigabyte files. Per-spectrum aggregates
+(MS-level breakdown, m/z & RT ranges) and the chromatogram index are computed
+**on demand** ("Compute breakdown" / "Build TIC"), time-sliced so the UI never
+freezes.
+
 ## What it does
 
 Three tabs, all driven from a single in-browser read of the file:
@@ -16,7 +24,10 @@ Three tabs, all driven from a single in-browser read of the file:
 - **Summary** — a `FileInfo`-style readout: spectrum / chromatogram / entity
   counts, MS-level breakdown, profile-vs-centroid split, m/z and retention-time
   ranges, storage layout (point / chunked), array encodings, and the file's
-  entity manifest.
+  entity manifest. For **imaging (MSI)** archives it additionally shows the
+  imaging block — pixel grid + provenance, pixel size, scan geometry (with
+  friendly IMS term names), coordinate base, and a table of any embedded
+  **optical image** files (source, archive path, dimensions, type, size).
 - **Metadata** — the full file-level metadata (`fileDescription`, instrument
   configurations, software, data processing, run, samples, and the
   `mzpeak_index.json` discovery block) rendered as a **hierarchical, collapsible
@@ -25,7 +36,10 @@ Three tabs, all driven from a single in-browser read of the file:
   ion current, or an extracted-ion chromatogram for an m/z window you specify)
   sits on top; click anywhere on it to jump to the nearest spectrum. The
   selected **spectrum** is plotted below — profile spectra as a line, centroid
-  spectra as a stick spectrum.
+  spectra as a stick spectrum — with **wheel/box zoom, pan, peak labels, and a
+  hover readout**. Navigation can be **filtered by MS level** (MS1/2/3…), and a
+  collapsible **per-spectrum metadata** tree shows that scan's CV params, scans,
+  precursors, and promoted columns.
 
 ## Stack
 
@@ -52,8 +66,9 @@ npm run dev      # http://localhost:5188
 (The dev port is pinned to **5188** in `vite.config.ts` so it won't collide with
 other Vite projects that default to 5173.)
 
-A couple of small demo files ship under [`public/static/`](public/static); the
-URL box is pre-filled with one.
+A couple of small demo files ship under [`public/static/`](public/static)
+(including `imaging-demo.mzpeak`, which carries an imaging block + an optical
+image so the imaging UI can be exercised); the URL box is pre-filled with one.
 
 ## Build & deploy
 
@@ -68,6 +83,19 @@ npm run preview
 ```bash
 VITE_BASE=/mzPeakExplorer/ npm run build
 ```
+
+### GitHub Pages (automated)
+
+The site deploys automatically via GitHub Actions on every push to `main` —
+see [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The workflow
+runs `npm ci && npm run build` with `VITE_BASE` derived from the repository name
+and publishes `dist/` to Pages. To enable it on a fresh fork: in **Settings →
+Pages**, set **Source** to **GitHub Actions**. No secrets are required; the
+build is fully static (no backend, no upload).
+
+The vendored reader is committed in-tree (`vendor/mzpeakts/lib`, just the source
++ `.d.ts` + the `parquet-wasm` `.tgz`), so CI needs no submodule or build of the
+reader — `npm ci` resolves everything and `npm run build` produces the site.
 
 ## Architecture notes
 
