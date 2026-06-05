@@ -212,47 +212,61 @@ button.primary:hover:not(:disabled) {
   margin-bottom: 1.25rem;
 }
 .stat-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
   padding: 0.7rem 0.85rem;
-  background: var(--panel);
+  background: var(--surface-card);
 }
 .stat-card .k {
-  font-size: 0.72rem;
+  font-size: var(--text-cap);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--muted);
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-muted);
 }
 .stat-card .v {
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-size: var(--text-stat);
+  font-weight: var(--weight-semibold);
   margin-top: 0.15rem;
+  color: var(--text-heading);
+}
+/* The headline figure (Spectra) value is OpenMS blue (handoff §5). */
+.stat-card.accent .v {
+  color: var(--accent);
 }
 .stat-card .v small {
-  font-size: 0.8rem;
+  font-size: var(--text-body);
   font-weight: 400;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
+/* Section headings become uppercase overlines (handoff §5). */
 h3.section {
   margin: 1.4rem 0 0.5rem;
-  font-size: 0.95rem;
+  font-size: var(--text-cap);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--text-muted);
 }
 
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: var(--text-data);
 }
 table.data th,
 table.data td {
   text-align: left;
   padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-default);
 }
 table.data th {
-  color: var(--muted);
-  font-weight: 600;
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+}
+table.data td {
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
 }
 table.data td.mono,
 .mono {

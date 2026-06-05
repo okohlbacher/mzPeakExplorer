@@ -39,9 +39,17 @@ function fmtRange(r: [number, number] | null, digits = 2): string {
   return `${r[0].toFixed(digits)} – ${r[1].toFixed(digits)}`;
 }
 
-function Card({ k, children }: { k: string; children: React.ReactNode }) {
+function Card({
+  k,
+  children,
+  accent,
+}: {
+  k: string;
+  children: React.ReactNode;
+  accent?: boolean;
+}) {
   return (
-    <div className="stat-card">
+    <div className={accent ? "stat-card accent" : "stat-card"}>
       <div className="k">{k}</div>
       <div className="v">{children}</div>
     </div>
@@ -202,7 +210,7 @@ export function SummaryTab() {
             {fmtBytes(s.fileSize)}
           </div>
         </Card>
-        <Card k="Spectra">
+        <Card k="Spectra" accent>
           {s.numSpectra.toLocaleString()}
         </Card>
         <Card k="Chromatograms">
