@@ -3,6 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SpectrumArrays } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
+import { STAGE, stageAxes } from "./chartTheme";
 import { nearestPeakIndex, topPeakIndices } from "./peaks";
 
 /**
@@ -81,13 +82,13 @@ export function SpectrumPlot({
         { label: "m/z" },
         {
           label: "intensity",
-          stroke: "#1565c0",
-          fill: "rgba(21,101,192,0.10)",
+          stroke: STAGE.line,
+          fill: STAGE.fill,
           width: 1,
           points: { show: false },
         },
       ],
-      axes: [{ label: "m/z" }, { label: "intensity" }],
+      axes: stageAxes("m/z", "intensity"),
       hooks: {
         draw: [
           (u) => drawXicBand(u, windowRef.current),
@@ -145,7 +146,7 @@ function drawXicBand(u: uPlot, win: { mz: number; tolDa: number } | null) {
   const xHi = u.valToPos(win.mz + win.tolDa, "x", true);
   const { ctx } = u;
   ctx.save();
-  ctx.fillStyle = "rgba(255,179,0,0.22)";
+  ctx.fillStyle = STAGE.band;
   ctx.fillRect(xLo, u.bbox.top, xHi - xLo, u.bbox.height);
   ctx.restore();
 }
@@ -158,8 +159,8 @@ function drawPeakLabels(u: uPlot, s: SpectrumArrays | null) {
   const idxs = topPeakIndices(s, xmin, xmax, MAX_LABELS);
   const { ctx } = u;
   ctx.save();
-  ctx.font = "11px system-ui, sans-serif";
-  ctx.fillStyle = "#37474f";
+  ctx.font = "11px IBM Plex Mono, monospace";
+  ctx.fillStyle = STAGE.label;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   const placed: number[] = [];

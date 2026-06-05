@@ -377,27 +377,48 @@ table.data td.mono,
   font: inherit;
   background: var(--bg);
 }
-.plot-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.5rem 0.6rem 0.2rem;
+/* ── Dark "data stage" — the OpenMS treatment for visualisation (handoff §7) ── */
+.data-stage {
+  background: var(--surface-stage);
+  border: 1px solid var(--ink-line);
+  border-radius: var(--radius-lg);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+  margin-bottom: 0.7rem;
 }
-.plot-card h4 {
-  margin: 0 0 0.3rem;
-  font-size: 0.85rem;
+.stage-plot {
+  padding: 0.55rem 0.7rem 0.35rem;
+}
+.stage-divider {
+  height: 1px;
+  background: var(--ink-line);
+}
+.stage-h {
+  margin: 0 0 0.4rem;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-on-stage);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 1rem;
 }
-.plot-card h4 .meta {
+.stage-meta {
   font-weight: 400;
-  color: var(--muted);
+  color: var(--text-faint);
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--text-sm);
+  text-align: right;
+}
+.stage-hint {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--text-sm);
 }
 .hint {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--text-sm);
 }
 /* Host for an imperatively-mounted uPlot. Must NOT target uPlot's own `.uplot`
    root — uPlot sets that to an explicit pixel width and forcing 100% on it
@@ -405,6 +426,15 @@ table.data td.mono,
 .chart-host {
   width: 100%;
   min-width: 0;
+}
+
+/* On the dark stage the canvas must stay transparent so the stage bg + dot-grid
+   show through; uPlot draws only strokes/labels (themed in chartTheme.ts). */
+.data-stage .uplot,
+.data-stage .u-wrap,
+.data-stage .u-over,
+.data-stage .u-under {
+  background: transparent;
 }
 
 /* Hover readout inside a uPlot cursor overlay (m/z + intensity). On-stage

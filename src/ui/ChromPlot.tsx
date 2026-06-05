@@ -3,6 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { ChromPoint } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
+import { STAGE, stageAxes } from "./chartTheme";
 
 /**
  * Chromatogram navigator: time (x) vs summed intensity (y). Clicking anywhere
@@ -66,12 +67,12 @@ export function ChromPlot({
         { label: "RT (s)" },
         {
           label: "intensity",
-          stroke: "#1565c0",
+          stroke: STAGE.line,
           width: 1.25,
-          points: { show: true, size: 4, stroke: "#1565c0", fill: "#fff" },
+          points: { show: true, size: 4, stroke: STAGE.line, fill: STAGE.pointFill },
         },
       ],
-      axes: [{ label: "retention time (s)" }, { label: "intensity" }],
+      axes: stageAxes("retention time (s)", "intensity"),
       hooks: {
         draw: [
           (u) => {
@@ -80,7 +81,7 @@ export function ChromPlot({
             const x = u.valToPos(t, "x", true);
             const { ctx } = u;
             ctx.save();
-            ctx.strokeStyle = "rgba(229,57,53,0.9)";
+            ctx.strokeStyle = STAGE.marker;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x, u.bbox.top);

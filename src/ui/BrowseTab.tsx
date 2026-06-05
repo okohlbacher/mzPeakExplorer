@@ -152,72 +152,86 @@ export function BrowseTab() {
         </div>
       </div>
 
-      <div className="plot-card">
-        <h4>
-          {chromTitle}
-          <span className="meta">
-            {chromLoading
-              ? "computing…"
-              : chrom
-                ? `${chrom.length} points · click to navigate`
-                : "not computed"}
-          </span>
-        </h4>
-        {chrom || chromLoading ? (
-          <ChromPlot
-            points={chrom ?? []}
-            onPick={(t) => void selectByTime(t)}
-            selectedTime={selTime}
+      {/* Dark "data stage" — both plots live here (handoff §7). */}
+      <div className="data-stage">
+        <div className="stage-plot">
+          <h4 className="stage-h">
+            {chromTitle}
+            <span className="stage-meta">
+              {chromLoading
+                ? "computing…"
+                : chrom
+                  ? `${chrom.length} points · click to navigate`
+                  : "not computed"}
+            </span>
+          </h4>
+          {chrom || chromLoading ? (
+            <ChromPlot
+              points={chrom ?? []}
+              onPick={(t) => void selectByTime(t)}
+              selectedTime={selTime}
+            />
+          ) : (
+            <p className="stage-hint" style={{ padding: "1.2rem 0.2rem" }}>
+              <strong style={{ color: "var(--text-on-stage)" }}>Build TIC</strong>{" "}
+              scans the per-spectrum index (metadata only); if the file has no
+              precomputed total-ion-current column it sums every spectrum. Or
+              extract an XIC for a specific m/z window above.
+            </p>
+          )}
+        </div>
+
+        <div className="stage-divider" />
+
+        <div className="stage-plot">
+          <h4 className="stage-h">
+            Spectrum
+            <span className="stage-meta">
+              {(() => {
+                const meta = selectedSpectrum ?? selRow;
+                if (!meta && !spectrumLoading) return "";
+                return [
+                  meta ? `id: ${meta.id}` : null,
+                  meta?.msLevel != null ? `MS${meta.msLevel}` : null,
+                  meta?.representation ?? null,
+                  meta?.time != null ? `RT ${meta.time.toFixed(2)} s` : null,
+                  selectedSpectrum ? `${selectedSpectrum.mz.length} pts` : null,
+                  spectrumLoading ? "loading…" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+              })()}
+            </span>
+          </h4>
+          <SpectrumPlot
+            spectrum={selectedSpectrum}
+            xicWindow={chromMode === "xic" ? xicParams : null}
           />
-        ) : (
-          <p className="hint" style={{ padding: "1.5rem 0.5rem" }}>
-            <strong>Build TIC</strong> scans the per-spectrum index (metadata
-            only); if the file has no precomputed total-ion-current column it
-            sums every spectrum. Or extract an XIC for a specific m/z window
-            above.
+          <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
+            Scroll to zoom · drag a box to zoom m/z · middle-drag to pan ·
+            double-click to reset
           </p>
-        )}
+        </div>
       </div>
 
-      <div className="plot-card">
-        <h4>
-          Spectrum
-          <span className="meta">
-            {(() => {
-              const meta = selectedSpectrum ?? selRow;
-              if (!meta && !spectrumLoading) return "";
-              return [
-                meta ? `id: ${meta.id}` : null,
-                meta?.msLevel != null ? `MS${meta.msLevel}` : null,
-                meta?.representation ?? null,
-                meta?.time != null ? `RT ${meta.time.toFixed(2)} s` : null,
-                selectedSpectrum ? `${selectedSpectrum.mz.length} pts` : null,
-                spectrumLoading ? "loading…" : null,
-              ]
-                .filter(Boolean)
-                .join(" · ");
-            })()}
-          </span>
-        </h4>
-        <SpectrumPlot
-          spectrum={selectedSpectrum}
-          xicWindow={chromMode === "xic" ? xicParams : null}
-        />
-        <p className="hint" style={{ marginTop: "0.3rem" }}>
-          Scroll to zoom · drag a box to zoom m/z · middle-drag to pan ·
-          double-click to reset
-        </p>
-        {selectedMeta != null && (
-          <details style={{ marginTop: "0.5rem" }}>
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-              Spectrum metadata
-            </summary>
-            <div style={{ marginTop: "0.4rem" }}>
-              <TreeView label="spectrum" value={selectedMeta} defaultOpen={2} />
-            </div>
-          </details>
-        )}
-      </div>
+      {/* Spectrum metadata is inspector content (light chrome), below the stage. */}
+      {selectedMeta != null && (
+        <details style={{ marginTop: "0.1rem" }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              fontWeight: "var(--weight-semibold)",
+              fontSize: "var(--text-body)",
+              color: "var(--text-heading)",
+            }}
+          >
+            Spectrum metadata
+          </summary>
+          <div style={{ marginTop: "0.4rem" }}>
+            <TreeView label="spectrum" value={selectedMeta} defaultOpen={2} />
+          </div>
+        </details>
+      )}
     </div>
   );
 }
