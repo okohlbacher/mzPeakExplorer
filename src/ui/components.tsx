@@ -1,7 +1,13 @@
 // OpenMS design-system primitives (typed recreation of the handoff's
 // reference-prototype/primitives.jsx). Inline, token-driven styles keep each
 // primitive self-contained and faithful to the spec.
-import { useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}openms-logo.png`;
 
@@ -324,6 +330,131 @@ export function SideNav({
         );
       })}
     </nav>
+  );
+}
+
+export function TextField({
+  label,
+  value,
+  onChange,
+  onKeyDown,
+  type = "text",
+  placeholder,
+  suffix,
+  width,
+  min,
+  max,
+  step,
+  style,
+}: {
+  label?: string;
+  value: string | number;
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  type?: "text" | "number";
+  placeholder?: string;
+  suffix?: ReactNode;
+  width?: string;
+  min?: number;
+  max?: number;
+  step?: number | string;
+  style?: CSSProperties;
+}) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <label style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", ...style }}>
+      {label && <span style={{ fontSize: "var(--text-label)", color: "var(--text-muted)" }}>{label}</span>}
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.4rem",
+          background: "var(--surface-card)",
+          border: `1px solid ${focus ? "var(--accent)" : "var(--border-default)"}`,
+          boxShadow: focus ? "0 0 0 2px var(--accent-soft)" : "none",
+          borderRadius: "var(--radius-sm)",
+          padding: "0 0.5rem",
+          transition: "var(--transition-ui)",
+          height: "var(--control-h)",
+        }}
+      >
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          min={min}
+          max={max}
+          step={step}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          style={{
+            border: "none",
+            outline: "none",
+            background: "transparent",
+            font: "inherit",
+            fontSize: "var(--text-body)",
+            color: "var(--text-body)",
+            width: width || "auto",
+            minWidth: 0,
+          }}
+        />
+        {suffix && (
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            {suffix}
+          </span>
+        )}
+      </span>
+    </label>
+  );
+}
+
+const SELECT_CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b757e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")";
+
+export function Select({
+  label,
+  value,
+  onChange,
+  options,
+  style,
+}: {
+  label?: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  options: { value: string; label: string; disabled?: boolean }[];
+  style?: CSSProperties;
+}) {
+  return (
+    <label style={{ display: "inline-flex", flexDirection: "column", gap: "0.25rem", ...style }}>
+      {label && <span style={{ fontSize: "var(--text-label)", color: "var(--text-muted)" }}>{label}</span>}
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          font: "inherit",
+          fontSize: "var(--text-body)",
+          color: "var(--text-body)",
+          background: "var(--surface-card)",
+          border: "1px solid var(--border-default)",
+          borderRadius: "var(--radius-sm)",
+          padding: "0 1.6rem 0 0.5rem",
+          height: "var(--control-h)",
+          cursor: "pointer",
+          appearance: "none",
+          backgroundImage: SELECT_CHEVRON,
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "right 0.5rem center",
+        }}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value} disabled={o.disabled}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

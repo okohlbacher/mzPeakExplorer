@@ -3,6 +3,7 @@ import { useStore } from "../state/store";
 import { ChromPlot } from "./ChromPlot";
 import { SpectrumPlot } from "./SpectrumPlot";
 import { TreeView } from "./TreeView";
+import { Button, Select, TextField } from "./components";
 
 export function BrowseTab() {
   const initBrowse = useStore((s) => s.initBrowse);
@@ -67,87 +68,78 @@ export function BrowseTab() {
         .sort((a, b) => a - b)
     : [1, 2, 3];
 
+  const levelOptions = [
+    { value: "all", label: `All${scanned ? ` (${numSpectra.toLocaleString()})` : ""}` },
+    ...levels.map((lvl) => {
+      const c = msLevelCounts?.[lvl];
+      return {
+        value: String(lvl),
+        label: `MS${lvl}${c ? ` (${c.toLocaleString()})` : ""}`,
+        disabled: scanned && !c,
+      };
+    }),
+  ];
+
   return (
     <div className="browse">
       <div className="browse-controls">
-        <div className="group">
-          <button
-            disabled={selectedIndex == null || selectedIndex <= 0}
-            onClick={() => void stepSpectrum(-1)}
-          >
+        <div className="control-row">
+          <Button size="sm" disabled={selectedIndex == null || selectedIndex <= 0} onClick={() => void stepSpectrum(-1)}>
             ‹ Prev
-          </button>
-          <label>Spectrum</label>
-          <input
+          </Button>
+          <TextField
+            label="Spectrum"
             type="number"
+            width="4.5rem"
             min={0}
             max={n - 1}
             value={selectedIndex ?? 0}
+            suffix={`of ${n - 1}`}
             onChange={(e) => {
               const v = Number(e.target.value);
               if (Number.isFinite(v) && v >= 0 && v < n) void selectSpectrum(v);
             }}
           />
-          <span className="hint">of {n - 1}</span>
-          <button
-            disabled={selectedIndex == null || selectedIndex >= n - 1}
-            onClick={() => void stepSpectrum(1)}
-          >
+          <Button size="sm" disabled={selectedIndex == null || selectedIndex >= n - 1} onClick={() => void stepSpectrum(1)}>
             Next ›
-          </button>
+          </Button>
         </div>
 
-        <div className="group">
-          <label htmlFor="ms-level">MS level</label>
-          <select
-            id="ms-level"
-            value={msLevelFilter ?? "all"}
-            onChange={(e) =>
-              void setMsLevelFilter(
-                e.target.value === "all" ? null : Number(e.target.value),
-              )
-            }
-          >
-            <option value="all">
-              All{scanned ? ` (${numSpectra.toLocaleString()})` : ""}
-            </option>
-            {levels.map((lvl) => {
-              const c = msLevelCounts?.[lvl];
-              return (
-                <option key={lvl} value={lvl} disabled={scanned && !c}>
-                  MS{lvl}
-                  {c ? ` (${c.toLocaleString()})` : ""}
-                </option>
-              );
-            })}
-          </select>
-        </div>
+        <Select
+          label="MS level"
+          value={msLevelFilter == null ? "all" : String(msLevelFilter)}
+          options={levelOptions}
+          onChange={(e) => void setMsLevelFilter(e.target.value === "all" ? null : Number(e.target.value))}
+        />
 
-        <div className="group">
-          <label>XIC m/z</label>
-          <input
+        <div className="control-row" style={{ marginLeft: "auto" }}>
+          <TextField
+            label="XIC m/z"
             type="number"
             step="0.001"
-            value={mz}
+            width="6rem"
             placeholder="e.g. 445.12"
+            value={mz}
             onChange={(e) => setMz(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submitXic()}
           />
-          <label>± Da</label>
-          <input
+          <TextField
+            label="± tol"
             type="number"
             step="0.001"
+            width="4rem"
+            suffix="Da"
             value={tol}
             onChange={(e) => setTol(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submitXic()}
           />
-          <button className="primary" onClick={submitXic} disabled={!mz}>
+          <Button size="sm" variant="primary" disabled={!mz} onClick={submitXic}>
             Extract
-          </button>
+          </Button>
           {(chromMode === "xic" || !chrom) && (
-            <button onClick={() => void showTic()} disabled={chromLoading}>
+            <Button size="sm" disabled={chromLoading} onClick={() => void showTic()}>
               {chromMode === "xic" ? "Show TIC" : "Build TIC"}
-            </button>
+            </Button>
           )}
         </div>
       </div>

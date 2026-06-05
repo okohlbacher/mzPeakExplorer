@@ -238,37 +238,18 @@ table.data td.mono,
   gap: 0.85rem;
   height: 100%;
 }
+/* Controls row on light chrome — labelled fields aligned to their baselines,
+   no group boxes (handoff §7 / BrowseView). */
 .browse-controls {
   display: flex;
-  gap: 0.75rem;
-  align-items: center;
+  gap: 0.7rem;
+  align-items: flex-end;
   flex-wrap: wrap;
 }
-.browse-controls .group {
+.control-row {
   display: flex;
   gap: 0.35rem;
-  align-items: center;
-  padding: 0.3rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-}
-.browse-controls label {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.browse-controls input[type="number"] {
-  width: 6rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font: inherit;
-}
-.browse-controls select {
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font: inherit;
-  background: var(--bg);
+  align-items: flex-end;
 }
 /* ── Dark "data stage" — the OpenMS treatment for visualisation (handoff §7) ── */
 .data-stage {

@@ -247,6 +247,11 @@ export function SummaryTab() {
         <Card k="Imaging">
           {s.isImaging ? "Yes" : "No"}
         </Card>
+        {s.instrument && (
+          <Card k="Instrument">
+            <span style={{ fontSize: "15px" }}>{s.instrument}</span>
+          </Card>
+        )}
       </div>
 
       {s.imaging && <ImagingSection img={s.imaging} />}

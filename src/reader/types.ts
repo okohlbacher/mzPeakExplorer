@@ -78,6 +78,8 @@ export type FileSummary = {
   isImaging: boolean;
   /** Parsed imaging discovery block when this is an imaging archive, else null. */
   imaging: ImagingInfo | null;
+  /** Best-effort instrument model name from the instrument configuration. */
+  instrument: string | null;
 };
 
 /** A lightweight per-spectrum index row used by the Browse navigator. */

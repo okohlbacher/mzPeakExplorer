@@ -68,6 +68,7 @@ export function App() {
   const fileName = useStore((s) => s.fileName);
   const numSpectra = useStore((s) => s.summary?.numSpectra);
   const openFile = useStore((s) => s.openFile);
+  const openUrl = useStore((s) => s.openUrl);
 
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
@@ -131,7 +132,7 @@ export function App() {
         right={
           <>
             {fileChip}
-            {ready && (
+            {ready ? (
               <Button
                 variant="secondary"
                 size="sm"
@@ -140,6 +141,17 @@ export function App() {
               >
                 Open file
               </Button>
+            ) : (
+              !loading && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  iconLeft={<FolderOpen size={15} />}
+                  onClick={() => void openUrl(`${import.meta.env.BASE_URL}static/small.mzpeak`)}
+                >
+                  Open demo
+                </Button>
+              )
             )}
           </>
         }

@@ -64,7 +64,37 @@ export function computeFastSummary(
     encodings,
     isImaging: imaging?.isImaging ?? false,
     imaging,
+    instrument: instrumentModel(reader),
   };
+}
+
+// Instrument-model CV term (MS:1000031) and a few non-model params to skip when
+// the model isn't explicitly tagged.
+const INSTRUMENT_MODEL_ACC = "MS:1000031";
+const NON_MODEL_NAME = /serial|customization|resolution|software|version/i;
+
+/** Best-effort instrument model name from the first instrument configuration. */
+function instrumentModel(reader: Reader): string | null {
+  const fm = reader.fileMetadata as
+    | { instrumentConfigurations?: unknown[] }
+    | undefined;
+  const configs = fm?.instrumentConfigurations;
+  if (!Array.isArray(configs)) return null;
+  for (const cfg of configs) {
+    const c = cfg as { parameters?: unknown[]; params?: unknown[] };
+    const params = (c.parameters ?? c.params) as
+      | { accession?: string; name?: string }[]
+      | undefined;
+    if (!Array.isArray(params)) continue;
+    // Prefer the param explicitly typed as the instrument model.
+    const tagged = params.find((p) => p?.accession === INSTRUMENT_MODEL_ACC);
+    if (tagged?.name) return tagged.name;
+    const named = params.find(
+      (p) => typeof p?.name === "string" && p.name && !NON_MODEL_NAME.test(p.name),
+    );
+    if (named?.name) return named.name;
+  }
+  return null;
 }
 
 /**
