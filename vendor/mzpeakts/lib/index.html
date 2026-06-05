@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script type="module">
+        import * as mzpeakts from "./src";
+        import * as arrow from "apache-arrow"
+        import * as arrowFFI from "arrow-js-ffi";
+        window.arrow = arrow
+        window.arrowFFI = arrowFFI
+        window.mzpeakts = mzpeakts;
+
+        window.reader = await mzpeakts.MzPeakReader.fromUrl("/static/small.chunked.mzpeak")
+        window.dataReader = await window.reader.spectrumData()
+        window.cDataReader = await window.reader.chromatogramData()
+    </script>
+</head>
+<body>
+    Hello
+    <input type="file" id="mzpeak-file" name="mzpeak-file" />
+    <script>
+        const fileObj = document.querySelector("#mzpeak-file")
+        fileObj.addEventListener("change", async function(e) {
+            console.log(this.files)
+            if (this.files.length) {
+                window.reader = await mzpeakts.MzPeakReader.fromBlob(this.files[0])
+                window.dataReader = await window.reader.spectrumData()
+                window.cDataReader = await window.reader.chromatogramData()
+            } else {
+                window.reader = null
+                window.dataReader = null
+                window.cDataReader = null
+            }
+        })
+    </script>
+</body>
+</html>

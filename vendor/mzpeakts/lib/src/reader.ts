@@ -1,0 +1,353 @@
+import * as Arrow from "apache-arrow";
+import { ZipStorage } from "./store";
+import {
+  SpectrumMetadata,
+  ChromatogramMetadata,
+  FileMetadata,
+} from "./metadata";
+import { HttpRangeReader, BlobReader } from "@zip.js/zip.js";
+import {
+  DataArraysReader,
+  packTableIntoDataArrays,
+  packTableIntoPeaks,
+} from "./data";
+import { BufferContext } from "./array_index";
+import { PointLike, Spectrum } from "./record";
+import { Span1D, Span1DBigInt } from "./utils";
+import { bigIntToNumber } from "apache-arrow/util/bigint";
+import { DataArrays } from './data';
+
+export interface XICPoint {
+  index: bigint,
+  time: number | null,
+  dataArrays: DataArrays
+}
+
+export interface XIC {
+  points: XICPoint[];
+  target: {
+    timeRange: Span1D | null;
+    mzRange: Span1D | null;
+  };
+};
+
+/**
+ * A reader for mzPeak files.
+ *
+ * This reader eagerly loads metadata but lazily loads signal data.
+ *
+ * <attribute>a</attribute>
+ */
+export class MzPeakReader<T> implements AsyncIterable<Spectrum> {
+  /**
+   * The storage backend for the mzPeak file. This is a ZIP archive that is either
+   * available as a `Blob` local to the runtime or available over HTTP(S) range requests.
+   */
+  store: ZipStorage<T>;
+  /**
+   * A reader for mass spectrum metadata that has been loaded eagerly.
+   */
+  spectrumMetadata: SpectrumMetadata | null = null;
+  /** A reader for chromatogram or trace metadata that has been loaded eagerly */
+  chromatogramMetadata: ChromatogramMetadata | null = null;
+  /**
+   * A reader for wavelength spectrum metadata that has been loaded eagerly.
+   */
+  wavelengthMetadata: SpectrumMetadata | null = null;
+  /**
+   * Whether the initial asynchronous metadata loading done by {@linkcode init} has completed.
+   *
+   * This only necessary if {@link constructor} is called directly instead of {@linkcode fromStore},
+   * {@linkcode fromUrl}, or {@linkcode fromBlob}.
+   */
+  initialized: boolean = false;
+  _spectrumDataReader: DataArraysReader | null = null;
+  _spectrumPeaksReader: DataArraysReader | null = null;
+  _chromatogramDataReader: DataArraysReader | null = null;
+  _wavelengthSpectrumDataReader: DataArraysReader | null = null;
+  _fileMetadata: FileMetadata | undefined = undefined;
+
+  /**
+   * Construct a {@linkcode MzPeakReader} from a {@linkcode ZipStorage}
+   * @param store The data storage to read from.
+   * @see {@link fromStore}, {@link fromUrl}, and {@link fromBlob}.
+   */
+  constructor(store: ZipStorage<T>) {
+    this.store = store;
+  }
+
+  get fileMetadata() {
+    if (this._fileMetadata != undefined) return this._fileMetadata;
+    this._fileMetadata = this.spectrumMetadata?.fileMetadata();
+    return this._fileMetadata;
+  }
+
+  static async fromStore<T>(store: ZipStorage<T>) {
+    const self = new this(store);
+    await self.init();
+    return self;
+  }
+
+  static async fromUrl(url: string | URL) {
+    return await MzPeakReader.fromStore(
+      new ZipStorage(new HttpRangeReader(url)),
+    );
+  }
+
+  static async fromBlob(blob: Blob) {
+    return await MzPeakReader.fromStore(new ZipStorage(new BlobReader(blob)));
+  }
+
+  async init() {
+    if (this.initialized) return this;
+    await this.store.init();
+    const spectrumMetaHandle = await this.store.spectrumMetadata();
+    if (spectrumMetaHandle) {
+      this.spectrumMetadata =
+        await SpectrumMetadata.fromParquet(spectrumMetaHandle);
+    }
+
+    const chromatogramMetaHandle = await this.store.chromatogramMetadata();
+    if (chromatogramMetaHandle) {
+      this.chromatogramMetadata = await ChromatogramMetadata.fromParquet(
+        chromatogramMetaHandle,
+      );
+    }
+
+    const wavelengthMetadataHandle =
+      await this.store.wavelengthSpectrumMetadata();
+    if (wavelengthMetadataHandle) {
+      this.wavelengthMetadata = await SpectrumMetadata.fromParquet(
+        wavelengthMetadataHandle,
+      );
+    }
+
+    this.initialized = true;
+    return this;
+  }
+
+  async spectrumData() {
+    if (this._spectrumDataReader) return this._spectrumDataReader;
+    if (!this.initialized) await this.init();
+    const handle = await this.store.spectrumData();
+    if (!handle) return null;
+    const dataReader = await DataArraysReader.fromParquet(
+      handle,
+      BufferContext.Spectrum,
+    );
+    if (this.spectrumMetadata)
+      dataReader.spacingModels = this.spectrumMetadata.loadSpacingModelIndex();
+    this._spectrumDataReader = dataReader;
+    return dataReader;
+  }
+
+  async *enumerateSpectra() {
+    if (!this.spectrumMetadata) return;
+    const dataReader = await this.spectrumData();
+    const peakReader = await this.spectrumPeaks();
+    const dataIter = dataReader?.enumerate();
+    const peakIter = peakReader?.enumerate();
+    const n = this.spectrumMetadata.length;
+    const dpCounts = this.spectrumMetadata.dataPointCount();
+    const peakCounts = this.spectrumMetadata.peakCount();
+    for (let i = 0; i < n; i++) {
+      const meta = this.spectrumMetadata.get(i);
+      const bigIndex = BigInt(i);
+      let hadData = 0
+
+      const dpCount = dpCounts?.get(i)
+      if (
+        dpCount &&
+        dataIter
+      ) {
+        await dataIter.seek(bigIndex)
+        let { done, value: data } = await dataIter.next();
+        if (!done) {
+          hadData++;
+        }
+
+        data = data[1];
+        if (data) {
+          meta["dataArrays"] = packTableIntoDataArrays(data);
+        }
+      }
+
+      const peakCount = peakCounts?.get(i)
+      if (peakCount && peakIter && (await peakIter.seek(bigIndex))) {
+        let { done, value: data } = await peakIter.next();
+        if (!done) {
+          hadData++;
+        }
+        data = data[1];
+        const peaks = packTableIntoPeaks(data) as any as PointLike[];
+        meta.centroids = peaks;
+      }
+
+      if (hadData == 0) {
+        console.log("No data for ", i)
+      };
+      yield meta;
+    }
+  }
+
+  async spectrumPeaks() {
+    if (this._spectrumPeaksReader) return this._spectrumPeaksReader;
+    if (!this.initialized) await this.init();
+    const handle = await this.store.spectrumPeaks();
+    if (!handle) return null;
+    return await DataArraysReader.fromParquet(handle, BufferContext.Spectrum);
+  }
+
+  async chromatogramData() {
+    if (this._chromatogramDataReader) return this._chromatogramDataReader;
+    if (!this.initialized) await this.init();
+    const handle = await this.store.chromatogramData();
+    if (!handle) return null;
+    this._chromatogramDataReader = await DataArraysReader.fromParquet(
+      handle,
+      BufferContext.Chromatogram,
+    );
+    return this._chromatogramDataReader;
+  }
+
+  async wavelengthSpectrumData() {
+    if (this._wavelengthSpectrumDataReader)
+      return this._wavelengthSpectrumDataReader;
+    if (!this.initialized) await this.init();
+    const handle = await this.store.wavelengthSpectrumData();
+    if (!handle) return null;
+    this._wavelengthSpectrumDataReader = await DataArraysReader.fromParquet(
+      handle,
+      BufferContext.Spectrum,
+    );
+    return this._wavelengthSpectrumDataReader;
+  }
+
+  async getSpectrum(index_: bigint | number) {
+    const index = BigInt(index_);
+    const meta = this.spectrumMetadata?.get(index);
+    if (meta) {
+      const indexNum = bigIntToNumber(index);
+      const dpCount = this.spectrumMetadata?.dataPointCount(indexNum)
+      if (dpCount) {
+        const handle = await this.spectrumData();
+        const data = await handle?.get(index);
+        if (data) {
+          meta["dataArrays"] = packTableIntoDataArrays(data);
+        }
+      }
+      const peakCount = this.spectrumMetadata?.peakCount(indexNum);
+      if (peakCount) {
+        const peakHandle = await this.spectrumPeaks();
+        const peakData = await peakHandle?.get(index);
+        if (peakData && peakData.numRows > 0) {
+          const peaks = packTableIntoPeaks(peakData) as any as PointLike[];
+          meta.centroids = peaks;
+        }
+      }
+      return meta;
+    }
+  }
+
+  async extractXIC(
+    timeRange: Span1D | null,
+    mzRange: Span1D | null = null,
+    useProfile: boolean = true,
+  ): Promise<XIC | null> {
+    if (!this.spectrumMetadata) return null;
+    let indexRange: Span1DBigInt | null = null;
+    if (timeRange)
+      indexRange = this.spectrumMetadata?.timeRangeToIndices(
+        timeRange.start,
+        timeRange.end,
+      );
+    const reader = await (useProfile ? this.spectrumData() : this.spectrumPeaks());
+    if (!reader) return null;
+    const points = (await reader.extractRangeFor(
+      indexRange,
+      mzRange,
+    )) as XICPoint[];
+    const timeArray = this.spectrumMetadata.spectra?.getChild(
+      "time",
+    ) as Arrow.Vector<Arrow.Float64> | null;
+    if (timeArray) {
+      return {
+        points: points.map((entry: XICPoint) => {
+          entry["time"] = timeArray.at(bigIntToNumber(entry.index));
+          return entry;
+        }),
+        target: {
+          timeRange,
+          mzRange,
+        },
+      };
+    } else {
+      return {
+        points: points.map((entry: XICPoint) => {
+          entry["time"] = null;
+          return entry;
+        }),
+        target: {
+          timeRange,
+          mzRange,
+        },
+      };
+    }
+  }
+
+  get numSpectra() {
+    return this.spectrumMetadata?.length ?? 0;
+  }
+
+  async getChromatogram(index_: bigint | number) {
+    const index = BigInt(index_);
+    const meta = this.chromatogramMetadata?.get(index);
+    if (meta) {
+      const handle = await this.chromatogramData();
+      const data = await handle?.get(index);
+      if (data) {
+        meta["dataArrays"] = packTableIntoDataArrays(data);
+      }
+      return meta;
+    }
+  }
+
+  get numChromatograms() {
+    return this.chromatogramMetadata?.length ?? 0;
+  }
+
+  async getWavelengthSpectrum(index_: bigint | number) {
+    const index = BigInt(index_);
+    const meta = this.wavelengthMetadata?.get(index);
+    if (meta) {
+      const handle = await this.wavelengthSpectrumData();
+      const data = await handle?.get(index);
+      if (data) {
+        meta["dataArrays"] = packTableIntoDataArrays(data);
+      }
+      return meta;
+    }
+  }
+
+  get numWavelengthSpectra() {
+    return this.wavelengthMetadata?.length ?? 0;
+  }
+
+  async at(index: bigint | number) {
+    return await this.getSpectrum(index);
+  }
+
+  async get(index: bigint | number) {
+    return await this.getSpectrum(index);
+  }
+
+  get length() {
+    return this.numSpectra;
+  }
+
+  async *[Symbol.asyncIterator]() {
+    for await (let value of this.enumerateSpectra()) {
+      yield value;
+    }
+  }
+}

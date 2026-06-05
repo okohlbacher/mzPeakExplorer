@@ -1,0 +1,43 @@
+{
+  "name": "mzpeakts",
+  "version": "0.1.0",
+  "description": "Read mzPeak mass spectrometry data files",
+  "main": "dist/mzpeakts.js",
+  "module": "dist/mzpeakts.js",
+  "types": "dist/mzpeakts.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/mzpeakts.js",
+      "types": "./dist/mzpeakts.d.ts"
+    }
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "mobiusklein@gmail.com",
+  "license": "(MIT OR Apache-2.0)",
+  "dependencies": {
+    "@zip.js/zip.js": "^2.8.23",
+    "apache-arrow": "^21.1.0",
+    "arrow-js-ffi": "^0.4.3",
+    "parquet-wasm": "file:vendor/parquet-wasm/pkg/parquet-wasm-0.7.1.tgz"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "rollup-plugin-dts": "^6.4.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.5",
+    "vite-plugin-dts": "^4.5.4",
+    "vite-plugin-top-level-await": "^1.4.4",
+    "vite-plugin-wasm": "^3.4.1",
+    "vitest": "^4.1.1"
+  }
+}

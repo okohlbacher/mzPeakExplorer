@@ -1,0 +1,20 @@
+node_modules/
+/dist/
+*.log
+.DS_Store
+.claude/settings.local.json
+test-results/
+
+# The vendored reader's own build deps (reinstalled from npm in CI):
+vendor/mzpeakts/lib/node_modules/
+
+# Redundant copies inside the vendored reader (not used by the app build).
+# Keep dist/mzpeakts.d.ts (tsc path map needs it) and the parquet-wasm .tgz
+# (npm ci installs from it); drop the heavy duplicates.
+vendor/mzpeakts/lib/static/
+vendor/mzpeakts/lib/dist/mzpeakts.js
+vendor/mzpeakts/lib/vendor/parquet-wasm/pkg/parquet_wasm_bg.wasm
+vendor/mzpeakts/lib/vendor/parquet-wasm/pkg/parquet_wasm_bg.wasm.d.ts
+vendor/mzpeakts/lib/vendor/parquet-wasm/pkg/parquet_wasm.js
+vendor/mzpeakts/lib/vendor/parquet-wasm/pkg/parquet_wasm.d.ts
+vendor/mzpeakts/lib/vendor/parquet-wasm/pkg/parquet_wasm_bg.js

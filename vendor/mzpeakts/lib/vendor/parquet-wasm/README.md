@@ -1,0 +1,1 @@
+This package has been patched to add some minor compatibility fixes and features that will hopefully be upstreamed.
