@@ -18,7 +18,7 @@ import { BrowseTab } from "./BrowseTab";
 const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "summary", label: "Summary", icon: <LayoutDashboard size={17} /> },
   { id: "metadata", label: "Metadata", icon: <ListTree size={17} /> },
-  { id: "browse", label: "Browse", icon: <Activity size={17} /> },
+  { id: "browse", label: "Browse Spectra", icon: <Activity size={17} /> },
 ];
 
 /** File mini-inspector pinned to the rail bottom — mirrors mzPeakIV's StatsPanel. */

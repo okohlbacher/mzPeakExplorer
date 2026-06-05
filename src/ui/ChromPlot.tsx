@@ -103,7 +103,17 @@ export function ChromPlot({
         ],
       },
     };
-    plotRef.current = new uPlot(opts, dataRef.current, el);
+    const plot = new uPlot(opts, dataRef.current, el);
+    plotRef.current = plot;
+    // Force the x-scale to the data extent — constructing with a small, all-equal-
+    // distance x range (an MS1-only TIC) can leave uPlot's x auto-range null while
+    // y ranges fine; an explicit setScale snaps it and paints the line.
+    const xs = dataRef.current[0];
+    if (xs.length > 0) {
+      const lo = xs[0] as number;
+      const hi = xs[xs.length - 1] as number;
+      plot.setScale("x", { min: lo, max: hi > lo ? hi : lo + 1 });
+    }
   }
 
   useEffect(() => {

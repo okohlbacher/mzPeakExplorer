@@ -176,10 +176,14 @@ export const useStore = create<State & Actions>((set, get) => ({
   async selectByTime(time) {
     const rows = get().spectra;
     if (rows.length === 0) return;
-    // Nearest spectrum by retention time (fall back to index when no time col).
-    let best = rows[0];
+    // Navigate within the active MS-level filter (so a TIC click on a filtered
+    // browse stays on that level); fall back to all if the filter has no rows.
+    const filter = get().msLevelFilter;
+    const filtered = filter == null ? rows : rows.filter((r) => r.msLevel === filter);
+    const pool = filtered.length > 0 ? filtered : rows;
+    let best = pool[0];
     let bestD = Infinity;
-    for (const r of rows) {
+    for (const r of pool) {
       const t = r.time ?? r.index;
       const d = Math.abs(t - time);
       if (d < bestD) {
@@ -350,13 +354,24 @@ async function runScan(
 }
 
 /**
+ * The TIC is an MS1 trace by convention — only MS1 spectra contribute. Falls
+ * back to all spectra when the file tags no MS1 (e.g. untagged levels) so the
+ * trace is never spuriously empty.
+ */
+function ticRows(rows: SpectrumIndexRow[]): SpectrumIndexRow[] {
+  const ms1 = rows.filter((row) => row.msLevel === 1);
+  return ms1.length > 0 ? ms1 : rows;
+}
+
+/**
  * Cheap TIC: built entirely from the promoted per-spectrum TIC column (MS:1000285)
- * already in metadata — no signal I/O. Returns null when the column is absent for
- * any spectrum, signalling that a TIC would require reading the whole file.
+ * already in metadata — no signal I/O. MS1-only. Returns null when the column is
+ * absent for any contributing spectrum (a TIC would then require a whole-file read).
  */
 function cheapTic(rows: SpectrumIndexRow[]): ChromPoint[] | null {
-  if (rows.length === 0 || !rows.every((row) => row.tic !== null)) return null;
-  return rows
+  const use = ticRows(rows);
+  if (use.length === 0 || !use.every((row) => row.tic !== null)) return null;
+  return use
     .map((row) => ({
       index: row.index,
       time: row.time ?? row.index,
@@ -366,10 +381,10 @@ function cheapTic(rows: SpectrumIndexRow[]): ChromPoint[] | null {
 }
 
 /**
- * Build a total-ion chromatogram. Prefer the cheap metadata-only path. The
- * fallback sums every spectrum's signal — a whole-file read — so it is refused
- * above AUTO_SCAN_LIMIT spectra (returns null) to avoid freezing the browser on
- * a multi-gigabyte file that lacks a promoted TIC column.
+ * Build a total-ion chromatogram (MS1-only). Prefer the cheap metadata-only path.
+ * The fallback sums every spectrum's signal — a whole-file read — so it is refused
+ * above AUTO_SCAN_LIMIT spectra (returns null) to avoid freezing the browser on a
+ * multi-gigabyte file that lacks a promoted TIC column.
  */
 async function buildTic(
   r: Reader,
@@ -379,7 +394,10 @@ async function buildTic(
   if (cheap) return cheap;
   if (rows.length > AUTO_SCAN_LIMIT) return null; // too expensive to sum
   const useProfile = rows.some((row) => row.representation !== "centroid");
-  return extractChromatogram(r, { useProfile });
+  const all = await extractChromatogram(r, { useProfile });
+  // Restrict the summed trace to MS1 spectra.
+  const ms1 = new Set(rows.filter((row) => row.msLevel === 1).map((row) => row.index));
+  return ms1.size > 0 ? all.filter((p) => ms1.has(p.index)) : all;
 }
 
 /** Read a stored chromatogram by index (used by the Browse stored-chrom picker). */

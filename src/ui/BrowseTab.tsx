@@ -80,27 +80,39 @@ export function BrowseTab() {
     }),
   ];
 
+  // When an MS level is selected, the spectrum index + counter are relative to
+  // that level's spectra only (browse only those). "All" → absolute over the file.
+  const filtered =
+    msLevelFilter != null ? spectra.filter((r) => r.msLevel === msLevelFilter) : null;
+  const usingFilter = filtered != null && filtered.length > 0;
+  const total = usingFilter ? filtered.length : n;
+  const pos = usingFilter
+    ? Math.max(0, filtered.findIndex((r) => r.index === selectedIndex))
+    : selectedIndex ?? 0;
+
   return (
     <div className="browse">
       <div className="browse-controls">
         <div className="control-row">
-          <Button size="sm" disabled={selectedIndex == null || selectedIndex <= 0} onClick={() => void stepSpectrum(-1)}>
+          <Button size="sm" disabled={pos <= 0} onClick={() => void stepSpectrum(-1)}>
             ‹ Prev
           </Button>
           <TextField
-            label="Spectrum"
+            label={usingFilter ? `Spectrum (MS${msLevelFilter})` : "Spectrum"}
             type="number"
             width="4.5rem"
             min={0}
-            max={n - 1}
-            value={selectedIndex ?? 0}
-            suffix={`of ${n - 1}`}
+            max={total - 1}
+            value={pos}
+            suffix={`of ${total - 1}`}
             onChange={(e) => {
               const v = Number(e.target.value);
-              if (Number.isFinite(v) && v >= 0 && v < n) void selectSpectrum(v);
+              if (!Number.isFinite(v) || v < 0 || v >= total) return;
+              const targetIdx = usingFilter ? filtered[v].index : v;
+              void selectSpectrum(targetIdx);
             }}
           />
-          <Button size="sm" disabled={selectedIndex == null || selectedIndex >= n - 1} onClick={() => void stepSpectrum(1)}>
+          <Button size="sm" disabled={pos >= total - 1} onClick={() => void stepSpectrum(1)}>
             Next ›
           </Button>
         </div>
