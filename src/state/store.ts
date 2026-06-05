@@ -28,7 +28,7 @@ let reader: Reader | null = null;
 // a newer file has superseded it and bail out instead of clobbering state.
 let loadGen = 0;
 
-export type Tab = "summary" | "metadata" | "browse";
+export type Tab = "summary" | "metadata" | "spectra" | "chromatograms";
 export type ChromMode = "tic" | "xic";
 
 type XicParams = { mz: number; tolDa: number };

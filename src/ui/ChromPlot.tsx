@@ -3,7 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { ChromPoint } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
-import { STAGE, stageAxes } from "./chartTheme";
+import { STAGE, stageAxes, xRange } from "./chartTheme";
 
 /**
  * Chromatogram navigator: time (x) vs summed intensity (y). Clicking anywhere
@@ -58,7 +58,7 @@ export function ChromPlot({
     const opts: uPlot.Options = {
       width: w,
       height: HEIGHT,
-      scales: { x: { time: false } },
+      scales: { x: { time: false, range: xRange } },
       // Left-drag stays a click (navigate); zoom via wheel, pan via middle-drag.
       cursor: { y: false, drag: { x: false, y: false } },
       legend: { show: false },
@@ -103,17 +103,7 @@ export function ChromPlot({
         ],
       },
     };
-    const plot = new uPlot(opts, dataRef.current, el);
-    plotRef.current = plot;
-    // Force the x-scale to the data extent — constructing with a small, all-equal-
-    // distance x range (an MS1-only TIC) can leave uPlot's x auto-range null while
-    // y ranges fine; an explicit setScale snaps it and paints the line.
-    const xs = dataRef.current[0];
-    if (xs.length > 0) {
-      const lo = xs[0] as number;
-      const hi = xs[xs.length - 1] as number;
-      plot.setScale("x", { min: lo, max: hi > lo ? hi : lo + 1 });
-    }
+    plotRef.current = new uPlot(opts, dataRef.current, el);
   }
 
   useEffect(() => {

@@ -3,7 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SpectrumArrays } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
-import { STAGE, stageAxes } from "./chartTheme";
+import { STAGE, stageAxes, xRange } from "./chartTheme";
 import { nearestPeakIndex, topPeakIndices } from "./peaks";
 
 /**
@@ -75,7 +75,7 @@ export function SpectrumPlot({
     const opts: uPlot.Options = {
       width: w,
       height: HEIGHT,
-      scales: { x: { time: false } },
+      scales: { x: { time: false, range: xRange } },
       legend: { show: false },
       plugins: [wheelZoomPlugin({ factor: 0.8 })],
       series: [

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Activity,
+  ChartSpline,
   File as FileIcon,
   FolderOpen,
   LayoutDashboard,
@@ -13,12 +14,14 @@ import { AppHeader, Badge, Button, Logo, SideNav, type NavItem } from "./compone
 import { IdleLoader } from "./FileLoader";
 import { SummaryTab } from "./SummaryTab";
 import { MetadataTab } from "./MetadataTab";
-import { BrowseTab } from "./BrowseTab";
+import { SpectraTab } from "./SpectraTab";
+import { ChromatogramsTab } from "./ChromatogramsTab";
 
 const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "summary", label: "Summary", icon: <LayoutDashboard size={17} /> },
   { id: "metadata", label: "Metadata", icon: <ListTree size={17} /> },
-  { id: "browse", label: "Browse Spectra", icon: <Activity size={17} /> },
+  { id: "spectra", label: "Spectra", icon: <Activity size={17} /> },
+  { id: "chromatograms", label: "Chromatograms", icon: <ChartSpline size={17} /> },
 ];
 
 /** File mini-inspector pinned to the rail bottom — mirrors mzPeakIV's StatsPanel. */
@@ -90,7 +93,7 @@ export function App() {
   const navItems: NavItem[] = NAV.map((it) => ({
     ...it,
     disabled: !ready,
-    badge: it.id === "browse" && ready && numSpectra != null ? numSpectra.toLocaleString() : undefined,
+    badge: it.id === "spectra" && ready && numSpectra != null ? numSpectra.toLocaleString() : undefined,
   }));
 
   const fileChip = ready && fileName && (
@@ -221,7 +224,8 @@ export function App() {
 
           {ready && tab === "summary" && <SummaryTab />}
           {ready && tab === "metadata" && <MetadataTab />}
-          {ready && tab === "browse" && <BrowseTab />}
+          {ready && tab === "spectra" && <SpectraTab />}
+          {ready && tab === "chromatograms" && <ChromatogramsTab />}
         </main>
       </div>
     </div>
