@@ -131,7 +131,9 @@ function describeError(err: unknown): string {
 export const useStore = create<State & Actions>((set, get) => ({
   ...initial,
 
-  setTab: (tab) => set({ tab }),
+  // Switching views clears any per-action error banner (a failed signal decode
+  // on one view must not bleed into the others).
+  setTab: (tab) => set({ tab, error: null }),
 
   async openFile(file) {
     await load(set, get, file.name, file.size, () => openBlob(file));
@@ -170,15 +172,22 @@ export const useStore = create<State & Actions>((set, get) => ({
       // signal arrays finish loading.
       const meta = getSpectrumMetadata(r, index);
       if (gen !== loadGen) return; // a newer file loaded while we read
-      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta });
+      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, error: null });
       const spectrum = await getSpectrumArrays(r, index);
       // Ignore if a newer file loaded or the user moved on meanwhile.
       if (gen === loadGen && get().selectedIndex === index) {
         set({ selectedSpectrum: spectrum, spectrumLoading: false });
       }
     } catch (err) {
+      // A spectrum that can't be decoded (e.g. an unsupported array compression)
+      // is NOT fatal — the file stays open so Summary/Metadata/Structure still
+      // work. Surface the error and clear the stale plot, but stay `ready`.
       if (gen === loadGen) {
-        set({ spectrumLoading: false, error: describeError(err), stage: "error" });
+        set({
+          spectrumLoading: false,
+          selectedSpectrum: null,
+          error: `Could not decode this spectrum: ${describeError(err)}`,
+        });
       }
     }
   },
@@ -259,10 +268,11 @@ export const useStore = create<State & Actions>((set, get) => ({
       const useProfile = (get().summary?.representationCounts.centroid ?? 0) === 0;
       const points = await extractChromatogram(r, { mz, tolDa, useProfile });
       if (gen !== loadGen) return;
-      set({ chrom: points, chromLoading: false });
+      set({ chrom: points, chromLoading: false, error: null });
     } catch (err) {
+      // Non-fatal: keep the file open (see selectSpectrum).
       if (gen === loadGen) {
-        set({ chromLoading: false, error: describeError(err), stage: "error" });
+        set({ chromLoading: false, error: `Could not extract the XIC: ${describeError(err)}` });
       }
     }
   },
@@ -292,10 +302,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         );
         return;
       }
-      set({ chrom: tic, chromLoading: false });
+      set({ chrom: tic, chromLoading: false, error: null });
     } catch (err) {
+      // Non-fatal: keep the file open (see selectSpectrum).
       if (gen === loadGen) {
-        set({ chromLoading: false, error: describeError(err), stage: "error" });
+        set({ chromLoading: false, error: `Could not build the chromatogram: ${describeError(err)}` });
       }
     }
   },
