@@ -187,6 +187,9 @@ table.data td.mono,
 .mono {
   font-family: var(--font-mono);
 }
+table.data tr.col-open > td {
+  background: var(--surface-panel);
+}
 
 .chips {
   display: flex;

@@ -37,6 +37,27 @@ export type ParquetColumn = {
   compression: string;
 };
 
+/** Deep per-column detail read from a parquet footer (hyparquet). */
+export type DeepColumn = {
+  path: string;
+  physicalType: string;
+  codec: string;
+  encodings: string[];
+  dictionary: boolean;
+  dataPages: number;
+  dictionaryPages: number;
+  numValues: number;
+  nullCount: number | null;
+  distinctCount: number | null;
+  min: string | null;
+  max: string | null;
+  compressed: number;
+  uncompressed: number;
+  rowGroups: number;
+  /** A non-repeated leaf whose values can be sampled for a histogram. */
+  scalar: boolean;
+};
+
 /** Internal table structure of one parquet member (from its footer metadata). */
 export type ParquetInfo = {
   numRows: number;

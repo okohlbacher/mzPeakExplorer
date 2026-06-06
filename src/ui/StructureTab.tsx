@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ChevronRight,
   Database,
@@ -6,10 +6,22 @@ import {
   Folder,
   Table2,
 } from "lucide-react";
-import { getArchiveListing, getParquetInfo } from "../state/store";
-import type { ArchiveEntry, ArchiveListing, ParquetInfo } from "../reader/types";
+import { Button } from "./components";
+import {
+  getArchiveListing,
+  getDeepColumn,
+  getParquetInfo,
+  sampleColumn,
+} from "../state/store";
+import type {
+  ArchiveEntry,
+  ArchiveListing,
+  DeepColumn,
+  ParquetColumn,
+  ParquetInfo,
+} from "../reader/types";
 import { fmtBytes } from "./format";
-import { accessionIn, cvTitle, useCvTerms } from "./cvTerms";
+import { accessionIn, cvTitle, useCvTerms, type CvMap } from "./cvTerms";
 
 /** Horizontal proportion bar (fraction 0..1) used for relative sizes. */
 function Bar({ frac, color }: { frac: number; color?: string }) {
@@ -91,9 +103,10 @@ function ParquetDetail({ filename }: { filename: string }) {
         <span><strong>{info.numRowGroups.toLocaleString()}</strong> row group{info.numRowGroups === 1 ? "" : "s"}</span>
         <span>{fmtBytes(info.totalCompressed)} compressed · {fmtBytes(info.totalUncompressed)} raw</span>
       </div>
-      <table className="data" style={{ maxWidth: 720 }}>
+      <table className="data" style={{ maxWidth: 760 }}>
         <thead>
           <tr>
+            <th style={{ width: 18 }} />
             <th style={{ width: "28%" }}>Column</th>
             <th style={{ width: 110 }}>Type</th>
             <th style={{ width: 120 }}>Compressed</th>
@@ -104,30 +117,253 @@ function ParquetDetail({ filename }: { filename: string }) {
         </thead>
         <tbody>
           {info.columns.map((c) => (
-            <tr key={c.name}>
-              <td className="mono" title={cvTitle(cv, accessionIn(c.name))}>{c.name}</td>
-              <td className="mono" style={{ color: "var(--text-secondary)" }}>{c.type}</td>
-              <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                {fmtBytes(c.compressedSize)}
-              </td>
-              <td style={{ minWidth: 160 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <Bar frac={maxCol > 0 ? c.compressedSize / maxCol : 0} />
-                  <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: "3ch" }}>
-                    {info.totalCompressed > 0
-                      ? `${Math.round((c.compressedSize / info.totalCompressed) * 100)}%`
-                      : "—"}
-                  </span>
-                </span>
-              </td>
-              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                {c.numValues.toLocaleString()}
-              </td>
-              <td className="mono" style={{ color: "var(--text-muted)" }}>{c.compression}</td>
-            </tr>
+            <ColumnRow
+              key={c.name}
+              filename={filename}
+              col={c}
+              maxCol={maxCol}
+              totalCompressed={info.totalCompressed}
+              cv={cv}
+            />
           ))}
         </tbody>
       </table>
+      <p className="stage-hint" style={{ marginTop: "0.5rem" }}>
+        Click a column for encodings, page stats, min/max, nulls and a sampled
+        value distribution.
+      </p>
+    </div>
+  );
+}
+
+/** One column row in the parquet table; clicking it reveals the deep panel. */
+function ColumnRow({
+  filename,
+  col,
+  maxCol,
+  totalCompressed,
+  cv,
+}: {
+  filename: string;
+  col: ParquetColumn;
+  maxCol: number;
+  totalCompressed: number;
+  cv: CvMap | null;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <tr
+        onClick={() => setOpen((o) => !o)}
+        style={{ cursor: "pointer" }}
+        className={open ? "col-open" : undefined}
+      >
+        <td style={{ color: "var(--text-muted)", textAlign: "center" }}>{open ? "▾" : "▸"}</td>
+        <td className="mono" title={cvTitle(cv, accessionIn(col.name))}>{col.name}</td>
+        <td className="mono" style={{ color: "var(--text-secondary)" }}>{col.type}</td>
+        <td style={{ fontVariantNumeric: "tabular-nums" }}>{fmtBytes(col.compressedSize)}</td>
+        <td style={{ minWidth: 160 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Bar frac={maxCol > 0 ? col.compressedSize / maxCol : 0} />
+            <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums", minWidth: "3ch" }}>
+              {totalCompressed > 0 ? `${Math.round((col.compressedSize / totalCompressed) * 100)}%` : "—"}
+            </span>
+          </span>
+        </td>
+        <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+          {col.numValues.toLocaleString()}
+        </td>
+        <td className="mono" style={{ color: "var(--text-muted)" }}>{col.compression}</td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={7} style={{ padding: 0, borderBottom: "1px solid var(--border-default)" }}>
+            <DeepColumnPanel filename={filename} path={col.name} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function Stat({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: "var(--text-cap)",
+          textTransform: "uppercase",
+          letterSpacing: "var(--tracking-caps)",
+          color: "var(--text-muted)",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: mono ? "var(--font-mono)" : "var(--font-sans)",
+          fontSize: "var(--text-sm)",
+          color: "var(--text-body)",
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/** Deep per-column detail (footer-derived) + an on-demand value histogram. */
+function DeepColumnPanel({ filename, path }: { filename: string; path: string }) {
+  const [d, setD] = useState<DeepColumn | null | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    setD(undefined);
+    void getDeepColumn(filename, path).then((x) => alive && setD(x));
+    return () => {
+      alive = false;
+    };
+  }, [filename, path]);
+
+  if (d === undefined) return <p className="stage-hint" style={{ padding: "0.6rem 0.7rem" }}>Reading column footer…</p>;
+  if (d === null) return <p className="stage-hint" style={{ padding: "0.6rem 0.7rem" }}>No deep detail available for this column.</p>;
+
+  const fmtNum = (n: number | null) => (n == null ? "—" : n.toLocaleString());
+  return (
+    <div style={{ padding: "0.7rem 0.9rem", background: "var(--surface-panel)" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+          gap: "0.6rem 1.1rem",
+          marginBottom: "0.6rem",
+        }}
+      >
+        <Stat label="Physical type" value={d.physicalType} mono />
+        <Stat label="Encodings" value={d.encodings.join(", ") || "—"} mono />
+        <Stat
+          label="Dictionary"
+          value={d.dictionary ? `yes (${d.dictionaryPages} page${d.dictionaryPages === 1 ? "" : "s"})` : "no"}
+        />
+        <Stat label="Data pages" value={fmtNum(d.dataPages)} />
+        <Stat label="Min" value={d.min ?? "—"} mono />
+        <Stat label="Max" value={d.max ?? "—"} mono />
+        <Stat label="Nulls" value={d.nullCount == null ? "—" : `${fmtNum(d.nullCount)} (${pct(d.nullCount, d.numValues)})`} />
+        <Stat label="Distinct" value={fmtNum(d.distinctCount)} />
+        <Stat label="Row groups" value={fmtNum(d.rowGroups)} />
+      </div>
+      {d.scalar ? (
+        <Histogram filename={filename} path={path} truncated={d.numValues > HIST_SAMPLE} />
+      ) : (
+        <p className="stage-hint">Repeated (list) column — value distribution not sampled.</p>
+      )}
+    </div>
+  );
+}
+
+function pct(part: number, whole: number): string {
+  if (!whole) return "0%";
+  const p = (100 * part) / whole;
+  return p > 0 && p < 0.1 ? "<0.1%" : `${p.toFixed(p < 10 ? 1 : 0)}%`;
+}
+
+const HIST_SAMPLE = 50000;
+const HIST_BINS = 24;
+
+/** Lazy, bounded numeric value histogram for a scalar column. */
+function Histogram({
+  filename,
+  path,
+  truncated,
+}: {
+  filename: string;
+  path: string;
+  truncated: boolean;
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "na">("idle");
+  const [bins, setBins] = useState<number[]>([]);
+  const [info, setInfo] = useState<{ n: number; min: number; max: number } | null>(null);
+
+  async function run() {
+    setState("loading");
+    const vals = await sampleColumn(filename, path, HIST_SAMPLE);
+    if (!vals || vals.length === 0) {
+      setState("na");
+      return;
+    }
+    let min = vals[0];
+    let max = vals[0];
+    for (const v of vals) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const counts = new Array(HIST_BINS).fill(0);
+    const span = max - min;
+    for (const v of vals) {
+      let i = span > 0 ? Math.floor(((v - min) / span) * HIST_BINS) : 0;
+      if (i >= HIST_BINS) i = HIST_BINS - 1;
+      if (i < 0) i = 0;
+      counts[i]++;
+    }
+    setBins(counts);
+    setInfo({ n: vals.length, min, max });
+    setState("done");
+  }
+
+  if (state === "idle") {
+    return (
+      <Button size="sm" onClick={run}>
+        Sample value distribution
+      </Button>
+    );
+  }
+  if (state === "loading") return <p className="stage-hint">Sampling values…</p>;
+  if (state === "na" || !info) {
+    return <p className="stage-hint">Distribution unavailable (non-numeric column).</p>;
+  }
+
+  const peak = Math.max(...bins, 1);
+  const fmt = (v: number) => (Number.isInteger(v) ? v.toLocaleString() : v.toPrecision(5));
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 2,
+          height: 70,
+          padding: "0.2rem 0",
+        }}
+      >
+        {bins.map((n, i) => (
+          <div
+            key={i}
+            title={`${n.toLocaleString()} values`}
+            style={{
+              flex: 1,
+              height: `${(n / peak) * 100}%`,
+              minHeight: n > 0 ? 2 : 0,
+              background: "var(--accent)",
+              borderRadius: "1px 1px 0 0",
+            }}
+          />
+        ))}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontSize: "var(--text-xs)",
+          color: "var(--text-muted)",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        <span>{fmt(info.min)}</span>
+        <span>
+          {info.n.toLocaleString()} values{truncated ? " · first 50k rows" : ""}
+        </span>
+        <span>{fmt(info.max)}</span>
+      </div>
     </div>
   );
 }

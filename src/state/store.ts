@@ -4,6 +4,7 @@ import { openBlob, openUrl, type Reader } from "../reader/open";
 import { fileMeta as readFileMeta, indexMetadata, manifest as readManifest } from "../reader/meta";
 import { computeFastSummary, scanSpectra } from "../reader/summary";
 import { listArchive, readParquetInfo } from "../reader/archive";
+import { deepColumn, sampleColumnNumbers } from "../reader/parquetDeep";
 import {
   chromatogramIds,
   extractChromatogram,
@@ -497,4 +498,16 @@ export function getArchiveListing(): ArchiveListing | null {
 export async function getParquetInfo(filename: string): Promise<ParquetInfo | null> {
   if (!reader) return null;
   return readParquetInfo(reader, filename);
+}
+
+/** Deep per-column footer detail (encodings, page stats, min/max/null/distinct). */
+export async function getDeepColumn(filename: string, columnPath: string) {
+  if (!reader) return null;
+  return deepColumn(reader, filename, columnPath);
+}
+
+/** Sample a scalar column's numeric values for a histogram (bounded read). */
+export async function sampleColumn(filename: string, columnPath: string, limit?: number) {
+  if (!reader) return null;
+  return sampleColumnNumbers(reader, filename, columnPath, limit);
 }

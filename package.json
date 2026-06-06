@@ -17,6 +17,8 @@
     "@zip.js/zip.js": "2.8.26",
     "apache-arrow": "21.1.0",
     "arrow-js-ffi": "0.4.3",
+    "hyparquet": "^1.26.0",
+    "hyparquet-compressors": "^1.1.1",
     "lucide-react": "^0.577.0",
     "mzpeakts": "file:vendor/mzpeakts/lib",
     "parquet-wasm": "0.7.1",
