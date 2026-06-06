@@ -96,12 +96,35 @@ button.primary:hover:not(:disabled) {
   font-size: var(--text-sm);
 }
 
+/* Content width caps (handoff §Views): readable line lengths on wide screens.
+   The dense Structure tab opts out and stays full-bleed. */
+.view-narrow {
+  max-width: 1080px;
+}
+.view-narrow-md {
+  max-width: 880px;
+}
+
 /* ── Summary ───────────────────────────────────────────────── */
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.7rem;
   margin-bottom: 1.25rem;
+}
+/* Two-column block (handoff §Summary): MS levels + representation | encodings +
+   entities. Collapses to a single column on narrow viewports. */
+.summary-cols {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .summary-cols {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
 }
 .stat-card {
   border: 1px solid var(--border-default);
@@ -133,7 +156,7 @@ button.primary:hover:not(:disabled) {
 
 /* Section headings become uppercase overlines (handoff §5). */
 h3.section {
-  margin: 1.4rem 0 0.5rem;
+  margin: 1.2rem 0 0.45rem;
   font-size: var(--text-cap);
   font-weight: var(--weight-semibold);
   text-transform: uppercase;

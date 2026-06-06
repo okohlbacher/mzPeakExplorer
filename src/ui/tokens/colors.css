@@ -84,15 +84,11 @@
   --syntax-num: #2e9e5b;   /* numeric / boolean (green)         */
   --syntax-str: #c2410c;   /* string values (burnt orange)      */
 
-  /* ---- Data-visualisation (on the dark stage) -------------- */
-  --plot-line: #5468e0;             /* spectrum / chromatogram stroke (blue, bright on dark) */
-  --plot-fill: rgba(84,104,224,0.16);/* profile-spectrum area fill                            */
-  --plot-marker: #d62828;           /* selected-time marker (signal red)                     */
-  --plot-xic-band: rgba(255,200,0,0.22); /* active XIC m/z window (warning band)              */
-  --plot-label: #c5ccd3;            /* peak m/z labels (light on dark)                       */
-  --plot-grid: #2a323a;             /* stage gridlines                                       */
-  --plot-axis: #9aa4ad;             /* axis tick text                                        */
-  --tooltip-bg: rgba(14,18,22,0.82);/* hover readout                                         */
+  /* ---- Data-visualisation --------------------------------------------------
+     The spectrum / chromatogram palette is owned by the typed STAGE const in
+     src/ui/chartTheme.ts (tuned to the white viewer panel); only the hover
+     tooltip background is referenced from CSS. */
+  --tooltip-bg: rgba(14,18,22,0.82);/* hover readout (dark chip over the white panel) */
 
   /* ==========================================================
      SEMANTIC ALIASES — reference these in components.

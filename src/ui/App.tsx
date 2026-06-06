@@ -32,7 +32,7 @@ function MiniInspector() {
   const s = useStore((st) => st.summary);
   if (!s) return null;
   const row = (k: string, v: string) => (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", padding: "0.12rem 0" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", padding: "0.14rem 0", lineHeight: 1.3 }}>
       <span style={{ color: "var(--text-muted)" }}>{k}</span>
       <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", textAlign: "right" }}>{v}</span>
     </div>

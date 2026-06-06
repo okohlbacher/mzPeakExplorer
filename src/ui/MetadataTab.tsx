@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../state/store";
 import { TreeView } from "./TreeView";
+import { Button } from "./components";
 
 /**
  * The hierarchical, collapsible metadata browser. Renders the five file-level
@@ -34,22 +35,24 @@ export function MetadataTab() {
   };
 
   return (
-    <div>
+    <div className="view-narrow-md">
       <div className="tree-toolbar">
-        <button onClick={() => apply(99)}>Expand all</button>
-        <button onClick={() => apply(1)}>Collapse</button>
+        <Button size="sm" onClick={() => apply(99)}>Expand all</Button>
+        <Button size="sm" onClick={() => apply(1)}>Collapse</Button>
         <span className="hint" style={{ alignSelf: "center" }}>
           Click a node to expand or collapse it.
         </span>
       </div>
-      {groups.map((g) => (
-        <TreeView
-          key={`${g.label}-${nonce}`}
-          label={g.label}
-          value={g.value}
-          defaultOpen={openDepth}
-        />
-      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+        {groups.map((g) => (
+          <TreeView
+            key={`${g.label}-${nonce}`}
+            label={g.label}
+            value={g.value}
+            defaultOpen={openDepth}
+          />
+        ))}
+      </div>
     </div>
   );
 }

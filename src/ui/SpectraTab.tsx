@@ -68,8 +68,16 @@ export function SpectraTab() {
     : selectedIndex ?? 0;
   const navDisabled = resolving || noMatches;
 
+  const repr = selectedSpectrum?.representation;
+  const reprHint =
+    repr === "centroid"
+      ? "centroid spectrum — drawn as a stick spectrum"
+      : repr
+        ? "profile spectrum — drawn as a line"
+        : null;
+
   return (
-    <div className="browse">
+    <div className="browse view-narrow">
       <div className="browse-controls">
         <div className="control-row">
           <Button
@@ -82,7 +90,7 @@ export function SpectraTab() {
           <TextField
             label={usingFilter ? `Spectrum (MS${msLevelFilter})` : "Spectrum"}
             type="number"
-            width="4.5rem"
+            width="5rem"
             min={0}
             max={Math.max(0, total - 1)}
             value={navDisabled ? 0 : pos}
@@ -171,8 +179,8 @@ export function SpectraTab() {
             xicWindow={chromMode === "xic" ? xicParams : null}
           />
           <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
-            Scroll to zoom · drag a box to zoom m/z · middle-drag to pan ·
-            double-click to reset
+            {reprHint ? `${reprHint} · ` : ""}scroll to zoom · drag a box to zoom
+            m/z · middle-drag to pan · double-click to reset
           </p>
         </div>
         </div>

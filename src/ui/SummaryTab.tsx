@@ -188,7 +188,7 @@ export function SummaryTab() {
     .sort((a, b) => a - b);
 
   return (
-    <div>
+    <div className="view-narrow">
       <div className="summary-grid">
         <Card k="File">
           <span style={{ fontSize: "0.95rem", wordBreak: "break-all" }}>
@@ -275,6 +275,8 @@ export function SummaryTab() {
         </div>
       )}
 
+      <div className="summary-cols">
+        <div>
       <h3 className="section">MS levels</h3>
       {msLevels.length === 0 ? (
         <p className="hint">
@@ -307,7 +309,8 @@ export function SummaryTab() {
 
       <h3 className="section">Spectrum representation</h3>
       <p className="hint">{repStr || pending}</p>
-
+        </div>
+        <div>
       <h3 className="section">Array encodings</h3>
       {s.encodings.length === 0 ? (
         <p className="hint">No array-encoding information.</p>
@@ -323,6 +326,8 @@ export function SummaryTab() {
 
       <h3 className="section">Entities ({manifest.length})</h3>
       <ManifestTable manifest={manifest} />
+        </div>
+      </div>
     </div>
   );
 }

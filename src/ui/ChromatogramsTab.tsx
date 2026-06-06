@@ -50,7 +50,7 @@ export function ChromatogramsTab() {
   }
 
   return (
-    <div className="browse">
+    <div className="browse view-narrow">
       <div className="browse-controls">
         <div className="control-row">
           <TextField
@@ -106,11 +106,17 @@ export function ChromatogramsTab() {
             </span>
           </h4>
           {chrom || chromLoading ? (
-            <ChromPlot
-              points={chrom ?? []}
-              onPick={(t) => void selectByTime(t)}
-              selectedTime={selTime}
-            />
+            <>
+              <ChromPlot
+                points={chrom ?? []}
+                onPick={(t) => void selectByTime(t)}
+                selectedTime={selTime}
+              />
+              <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
+                Click a point to select the nearest spectrum · scroll to zoom ·
+                drag to box-zoom RT
+              </p>
+            </>
           ) : (
             <p className="stage-hint" style={{ padding: "1.2rem 0.2rem" }}>
               <strong style={{ color: "var(--text-heading)" }}>Build TIC</strong>{" "}
