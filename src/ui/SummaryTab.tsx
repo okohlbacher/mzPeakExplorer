@@ -1,7 +1,30 @@
+import { useState } from "react";
 import { useStore } from "../state/store";
 import type { ImagingInfo } from "../reader/types";
 import { fmtBytes } from "./format";
-import { accessionIn, cvTitle, useCvTerms } from "./cvTerms";
+import { accessionIn, cvTitle, useCvTerms, type CvMap } from "./cvTerms";
+
+/** An array-encoding pill that reveals its ontology term + definition on hover. */
+function EncodingChip({ code, cv }: { code: string; cv: CvMap | null }) {
+  const [hover, setHover] = useState(false);
+  const term = cv?.[accessionIn(code) ?? ""] ?? null;
+  return (
+    <span
+      className="chip"
+      style={{ position: "relative", cursor: term ? "help" : "default" }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {code}
+      {hover && term && (
+        <span className="cv-pop" role="tooltip">
+          <span className="cv-pop-name">{code} · {term.n}</span>
+          {term.d && <span className="cv-pop-def">{term.d}</span>}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // Friendly names for the common IMS scan-geometry CURIEs; falls back to the CURIE.
 const IMS_TERMS: Record<string, string> = {
@@ -320,9 +343,7 @@ export function SummaryTab() {
       ) : (
         <div className="chips">
           {s.encodings.map((e) => (
-            <span className="chip" key={e} title={cvTitle(cv, accessionIn(e))}>
-              {e}
-            </span>
+            <EncodingChip key={e} code={e} cv={cv} />
           ))}
         </div>
       )}

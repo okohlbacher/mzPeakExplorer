@@ -202,6 +202,39 @@ table.data td.mono,
   color: var(--accent-secondary);
   border-radius: var(--radius-pill);
 }
+/* Hover popover revealing a CV pill's ontology term + definition. */
+.cv-pop {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  width: max-content;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
+  white-space: normal;
+  text-align: left;
+  cursor: default;
+}
+.cv-pop-name {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+  color: var(--text-heading);
+}
+.cv-pop-def {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--text-secondary);
+}
 
 /* ── Metadata tree ─────────────────────────────────────────── */
 .tree {
