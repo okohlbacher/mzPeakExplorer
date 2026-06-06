@@ -14,7 +14,7 @@ export function IdleLoader() {
   const openFile = useStore((s) => s.openFile);
   const openUrl = useStore((s) => s.openUrl);
 
-  const [url, setUrl] = useState(DEFAULT_DEMO_URL);
+  const [url, setUrl] = useState("");
   const [over, setOver] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
