@@ -360,10 +360,21 @@ async function runScan(
   gen: number,
 ): Promise<void> {
   set({ scanning: true, scanProgress: 0 });
-  const { rows, aggregates } = await scanSpectra(r, (done, total) => {
-    if (gen === loadGen) set({ scanProgress: total ? done / total : 1 });
-  });
+  let result: Awaited<ReturnType<typeof scanSpectra>>;
+  try {
+    result = await scanSpectra(r, (done, total) => {
+      if (gen === loadGen) set({ scanProgress: total ? done / total : 1 });
+    });
+  } catch (err) {
+    // Never leave the UI stuck "resolving": surface the failure and clear the
+    // scanning flag so the MS-level filter and Build-TIC paths recover.
+    if (gen === loadGen) {
+      set({ scanning: false, scanProgress: null, error: describeError(err) });
+    }
+    return;
+  }
   if (gen !== loadGen) return; // stale — a newer file is loading
+  const { rows, aggregates } = result;
   const prev = get().summary;
   set({
     scanning: false,
