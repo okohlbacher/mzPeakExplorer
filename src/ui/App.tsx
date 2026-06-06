@@ -12,7 +12,7 @@ import {
 
 import { useStore, type Tab } from "../state/store";
 import { AppHeader, Badge, Button, Logo, SideNav, type NavItem } from "./components";
-import { IdleLoader } from "./FileLoader";
+import { DEMO_URL, IdleLoader } from "./FileLoader";
 import { SummaryTab } from "./SummaryTab";
 import { MetadataTab } from "./MetadataTab";
 import { SpectraTab } from "./SpectraTab";
@@ -153,7 +153,7 @@ export function App() {
                   variant="primary"
                   size="sm"
                   iconLeft={<FolderOpen size={15} />}
-                  onClick={() => void openUrl(`${import.meta.env.BASE_URL}static/small.mzpeak`)}
+                  onClick={() => void openUrl(DEMO_URL)}
                 >
                   Open demo
                 </Button>

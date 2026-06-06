@@ -1,9 +1,14 @@
 import { useRef, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { Download, Play, ShieldCheck } from "lucide-react";
 import { useStore } from "../state/store";
-import { Logo } from "./components";
+import { Button, Logo } from "./components";
 
-const DEFAULT_DEMO_URL = `${import.meta.env.BASE_URL}static/small.mzpeak`;
+/** Remote demo file (SCIEX TripleTOF 6600, ~145 MB) on StackIT object storage.
+ *  Opened via HTTP range requests, so a visit transfers only the footer + the
+ *  parts you view — not the whole file. */
+export const DEMO_URL =
+  "https://object.storage.eu01.onstackit.cloud/v09/mzML-examples/sciex-tripletof-6600/12_80.mzpeak";
+const DEMO_FILENAME = "12_80.mzpeak";
 
 /**
  * The idle empty state: centred OpenMS logo + intro, a large drop-zone (file
@@ -118,18 +123,27 @@ export function IdleLoader() {
         </span>
       </div>
 
-      <p style={{ marginTop: "0.8rem", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-        or{" "}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            void openUrl(DEFAULT_DEMO_URL);
-          }}
-          style={{ color: "var(--text-link)" }}
-        >
-          load the bundled demo
+      <div
+        style={{
+          marginTop: "1rem",
+          display: "flex",
+          gap: "0.5rem",
+          justifyContent: "center",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <Button variant="primary" size="sm" iconLeft={<Play size={14} />} onClick={() => void openUrl(DEMO_URL)}>
+          Open demo
+        </Button>
+        <a href={DEMO_URL} download={DEMO_FILENAME} className="demo-download">
+          <Download size={14} />
+          Download demo file (~145 MB)
         </a>
+      </div>
+      <p style={{ marginTop: "0.5rem", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+        “Open demo” streams it over the network (instant start). Downloading first
+        is faster if you’ll browse a lot — then open it with <u>browse</u> above.
       </p>
 
       <form

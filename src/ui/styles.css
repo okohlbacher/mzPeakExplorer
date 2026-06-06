@@ -358,6 +358,25 @@ table.data tr.col-open > td {
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+/* Download-demo link styled as a secondary button. */
+.demo-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  color: var(--text-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  transition: var(--transition-ui);
+}
+.demo-download:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .link-btn {
   border: none;
   background: none;
