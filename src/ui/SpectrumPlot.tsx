@@ -1,10 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SpectrumArrays } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
 import { STAGE, stageAxes, xRange } from "./chartTheme";
 import { nearestPeakIndex, topPeakIndices } from "./peaks";
+import { useUplot } from "./useUplot";
 
 /**
  * Single-spectrum plot: m/z (x) vs intensity (y). Profile spectra draw as a
@@ -12,9 +13,6 @@ import { nearestPeakIndex, topPeakIndices } from "./peaks";
  * zoom (left drag) / pan (middle drag) / double-click reset, the most intense
  * visible peaks are auto-labelled with their m/z, and a hover tooltip reads the
  * nearest peak. An optional translucent band marks the active XIC m/z window.
- *
- * The uPlot instance is created LAZILY once the host has a real width —
- * constructing at zero width permanently breaks uPlot's scale auto-ranging.
  */
 const HEIGHT = 320;
 const MAX_LABELS = 10;
@@ -45,99 +43,55 @@ export function SpectrumPlot({
   spectrum: SpectrumArrays | null;
   xicWindow: { mz: number; tolDa: number } | null;
 }) {
-  const elRef = useRef<HTMLDivElement | null>(null);
-  const plotRef = useRef<uPlot | null>(null);
-  const dataRef = useRef<uPlot.AlignedData>(toSeries(spectrum));
   const specRef = useRef<SpectrumArrays | null>(spectrum);
   specRef.current = spectrum;
   const windowRef = useRef(xicWindow);
   windowRef.current = xicWindow;
   const tipRef = useRef<HTMLDivElement | null>(null);
 
-  // (Re)build the plot from the current data. Constructing uPlot with the real
-  // data at a real width is the only reliable way to get correct scale ranging —
-  // a plot built empty (the spectrum loads asynchronously) never re-ranges on a
-  // later setData. So we recreate on each data change; it's a few ms for an 18k-
-  // point spectrum and conveniently resets zoom when navigating to a new scan.
-  function build() {
-    const el = elRef.current;
-    if (!el) return;
-    const w = el.clientWidth;
-    if (w <= 0) return; // wait for layout
-    if (dataRef.current[0].length === 0) {
-      plotRef.current?.destroy();
-      plotRef.current = null;
-      tipRef.current = null;
-      return;
-    }
-    plotRef.current?.destroy();
-
-    const opts: uPlot.Options = {
-      width: w,
-      height: HEIGHT,
-      scales: { x: { time: false, range: xRange } },
-      legend: { show: false },
-      plugins: [wheelZoomPlugin({ factor: 0.8 })],
-      series: [
-        { label: "m/z" },
-        {
-          label: "intensity",
-          stroke: STAGE.line,
-          fill: STAGE.fill,
-          width: 1,
-          points: { show: false },
-        },
-      ],
-      axes: stageAxes("m/z", "intensity"),
-      hooks: {
-        draw: [
-          (u) => drawXicBand(u, windowRef.current),
-          (u) => drawPeakLabels(u, specRef.current),
+  const hostRef = useUplot(
+    (el, width) => {
+      const data = toSeries(spectrum);
+      if (data[0].length === 0) return null;
+      const opts: uPlot.Options = {
+        width,
+        height: HEIGHT,
+        scales: { x: { time: false, range: xRange } },
+        legend: { show: false },
+        plugins: [wheelZoomPlugin({ factor: 0.8 })],
+        series: [
+          { label: "m/z" },
+          {
+            label: "intensity",
+            stroke: STAGE.line,
+            fill: STAGE.fill,
+            width: 1,
+            points: { show: false },
+          },
         ],
-        setCursor: [(u) => updateTooltip(u, tipRef.current, specRef.current)],
-      },
-    };
+        axes: stageAxes("m/z", "intensity"),
+        hooks: {
+          draw: [
+            (u) => drawXicBand(u, windowRef.current),
+            (u) => drawPeakLabels(u, specRef.current),
+          ],
+          setCursor: [(u) => updateTooltip(u, tipRef.current, specRef.current)],
+        },
+      };
+      const plot = new uPlot(opts, data, el);
+      // Tooltip lives inside the cursor overlay so its coords match cursor.left/top.
+      const tip = document.createElement("div");
+      tip.className = "spec-tooltip";
+      plot.over.appendChild(tip);
+      tipRef.current = tip;
+      return plot;
+    },
+    HEIGHT,
+    [spectrum],
+    [xicWindow],
+  );
 
-    const plot = new uPlot(opts, dataRef.current, el);
-    plotRef.current = plot;
-    // Tooltip lives inside the cursor overlay so its coords match cursor.left/top.
-    const tip = document.createElement("div");
-    tip.className = "spec-tooltip";
-    plot.over.appendChild(tip);
-    tipRef.current = tip;
-  }
-
-  useEffect(() => {
-    const el = elRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const w = el.clientWidth;
-      if (w <= 0) return;
-      if (plotRef.current) plotRef.current.setSize({ width: w, height: HEIGHT });
-      else build();
-    });
-    ro.observe(el);
-    build();
-    return () => {
-      ro.disconnect();
-      plotRef.current?.destroy();
-      plotRef.current = null;
-      tipRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    dataRef.current = toSeries(spectrum);
-    build();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spectrum]);
-
-  useEffect(() => {
-    plotRef.current?.redraw();
-  }, [xicWindow]);
-
-  return <div ref={elRef} className="chart-host" />;
+  return <div ref={hostRef} className="chart-host" />;
 }
 
 function drawXicBand(u: uPlot, win: { mz: number; tolDa: number } | null) {

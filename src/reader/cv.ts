@@ -1,10 +1,21 @@
-// Small helpers for reading the reader's promoted-column "meta" bags, which are
-// keyed by accession-derived names like "MS_1000511_ms_level" or
-// "MS_1000285_total_ion_current_unit_MS_1000131".
+// Shared helpers for the reader's promoted-column "meta" bags, which are keyed
+// by accession-derived names like "MS_1000511_ms_level". Single source of truth
+// for the column names + small coercions used by both summary.ts and browse.ts.
 import type { Representation } from "./types";
 
 const REPR_PROFILE = "MS:1000128";
 const REPR_CENTROID = "MS:1000127";
+
+/** Top-level Arrow struct columns of the spectrum-metadata table. */
+export const COL = {
+  msLevel: "MS_1000511_ms_level",
+  representation: "MS_1000525_spectrum_representation",
+  time: "time",
+  id: "id",
+  tic: "MS_1000285_total_ion_current_unit_MS_1000131",
+  mzLow: "MS_1000528_lowest_observed_mz_unit_MS_1000040",
+  mzHigh: "MS_1000527_highest_observed_mz_unit_MS_1000040",
+} as const;
 
 /** Map a raw MS:1000525 value to the UI representation enum. */
 export function toRepresentation(raw: unknown): Representation {
@@ -13,22 +24,24 @@ export function toRepresentation(raw: unknown): Representation {
   return null;
 }
 
-/**
- * Read the first numeric value from a meta bag whose key contains `accession`
- * (e.g. "1000285"). Tolerant of the unit suffixes the converter appends to
- * promoted column names. Returns null when absent or non-finite.
- */
-export function metaNumberByAccession(
-  meta: unknown,
-  accession: string,
-): number | null {
-  if (!meta || typeof meta !== "object") return null;
-  const needle = accession.replace(":", "_");
-  for (const [k, v] of Object.entries(meta as Record<string, unknown>)) {
-    if (k.includes(needle) || k.includes(accession)) {
-      if (typeof v === "number" && Number.isFinite(v)) return v;
-      if (typeof v === "bigint") return Number(v);
-    }
-  }
-  return null;
+/** Narrow an unknown meta value to a plain record. */
+export function bag(meta: unknown): Record<string, unknown> {
+  return meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
+}
+
+/** Coerce an unknown (number | bigint | string | null) to a finite number or null. */
+export function numOrNull(v: unknown): number | null {
+  if (v == null) return null;
+  const n = typeof v === "number" ? v : Number(v as number);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Representation of a record, from its promoted-column bag with an isProfile fallback. */
+export function recRepresentation(rec: {
+  meta?: unknown;
+  isProfile?: boolean;
+}): Representation {
+  const m = bag(rec.meta);
+  const raw = m[COL.representation] ?? (rec.isProfile ? REPR_PROFILE : undefined);
+  return toRepresentation(raw);
 }

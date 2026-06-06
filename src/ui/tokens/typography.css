@@ -9,7 +9,6 @@
   /* ---- Families ------------------------------------------- */
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --mono: var(--font-mono); /* legacy alias */
 
   /* ---- Type scale (px) — handoff §4 ------------------------ */
   --text-2xs: 10.5px;   /* overlines / stat captions            */

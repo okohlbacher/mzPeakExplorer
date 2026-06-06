@@ -2,11 +2,10 @@
 // index, single-spectrum reconstruction, XIC extraction, and stored-chromatogram
 // access. All return plain typed arrays / POJOs — no Arrow, no bigint upward.
 import type { Reader } from "./open";
-import { toRepresentation } from "./cv";
+import { recRepresentation } from "./cv";
 import { plainify } from "./plainify";
 import type {
   ChromPoint,
-  Representation,
   SpectrumArrays,
   StoredChromatogram,
 } from "./types";
@@ -14,21 +13,6 @@ import type {
 const MZ_KEY = "m/z array";
 const INTENSITY_KEY = "intensity array";
 const TIME_KEY = "time array";
-const REPR_COL = "MS_1000525_spectrum_representation";
-const REPR_PROFILE = "MS:1000128";
-
-function bag(meta: unknown): Record<string, unknown> {
-  return meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
-}
-
-function recRepresentation(rec: {
-  meta?: unknown;
-  isProfile?: boolean;
-}): Representation {
-  const m = bag(rec.meta);
-  const raw = m[REPR_COL] ?? (rec.isProfile ? REPR_PROFILE : undefined);
-  return toRepresentation(raw);
-}
 
 /**
  * Full per-spectrum metadata for the selected spectrum, plainified for the

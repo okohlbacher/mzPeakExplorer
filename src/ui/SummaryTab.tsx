@@ -1,5 +1,5 @@
 import { useStore } from "../state/store";
-import type { FileSummary, ImagingInfo } from "../reader/types";
+import type { ImagingInfo } from "../reader/types";
 
 // Friendly names for the common IMS scan-geometry CURIEs; falls back to the CURIE.
 const IMS_TERMS: Record<string, string> = {
@@ -206,7 +206,7 @@ export function SummaryTab() {
           <span style={{ fontSize: "0.95rem", wordBreak: "break-all" }}>
             {s.fileName}
           </span>
-          <div style={{ fontSize: "0.8rem", fontWeight: 400, color: "var(--muted)" }}>
+          <div style={{ fontSize: "0.8rem", fontWeight: 400, color: "var(--text-muted)" }}>
             {fmtBytes(s.fileSize)}
           </div>
         </Card>
@@ -225,7 +225,7 @@ export function SummaryTab() {
               {fmtRange(s.mzRange, 2)} <small>Th</small>
             </>
           ) : (
-            <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--muted)" }}>
+            <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--text-muted)" }}>
               {pending}
             </span>
           )}
@@ -236,7 +236,7 @@ export function SummaryTab() {
               {fmtRange(s.rtRange, 1)} <small>s</small>
             </>
           ) : (
-            <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--muted)" }}>
+            <span style={{ fontSize: "0.9rem", fontWeight: 400, color: "var(--text-muted)" }}>
               {pending}
             </span>
           )}
@@ -249,7 +249,7 @@ export function SummaryTab() {
         </Card>
         {s.instrument && (
           <Card k="Instrument">
-            <span style={{ fontSize: "15px" }}>{s.instrument}</span>
+            <span style={{ fontSize: "var(--text-body)" }}>{s.instrument}</span>
           </Card>
         )}
       </div>
@@ -261,9 +261,9 @@ export function SummaryTab() {
           style={{
             margin: "1rem 0",
             padding: "0.6rem 0.8rem",
-            border: "1px solid var(--border)",
+            border: "1px solid var(--border-default)",
             borderRadius: 6,
-            background: "var(--panel)",
+            background: "var(--surface-panel)",
             display: "flex",
             alignItems: "center",
             gap: "0.75rem",
@@ -334,19 +334,16 @@ export function SummaryTab() {
       )}
 
       <h3 className="section">Entities ({manifest.length})</h3>
-      <ManifestTable manifest={manifest} summary={s} />
+      <ManifestTable manifest={manifest} />
     </div>
   );
 }
 
 function ManifestTable({
   manifest,
-  summary,
 }: {
   manifest: { name: string; entityType: string; dataKind: string }[];
-  summary: FileSummary;
 }) {
-  void summary;
   if (manifest.length === 0) return <p className="hint">No manifest entries.</p>;
   return (
     <table className="data">

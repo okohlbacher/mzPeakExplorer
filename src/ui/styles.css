@@ -1,6 +1,5 @@
 /* OpenMS design-system tokens (colors / type / spacing) + element base.
-   These define :root (incl. legacy aliases --bg/--border/--panel/--muted/--mono/
-   --accent so the rules below keep working) and the body defaults. */
+   These define :root and the body defaults. */
 @import "./tokens/colors.css";
 @import "./tokens/typography.css";
 @import "./tokens/spacing.css";
@@ -163,7 +162,7 @@ table.data td {
 }
 table.data td.mono,
 .mono {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
 }
 
 .chips {
@@ -172,7 +171,7 @@ table.data td.mono,
   gap: 0.4rem;
 }
 .chip {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
   padding: 0.15rem 0.5rem;
@@ -183,13 +182,13 @@ table.data td.mono,
 
 /* ── Metadata tree ─────────────────────────────────────────── */
 .tree {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.55;
 }
 .tree-node {
   padding-left: 1rem;
-  border-left: 1px dotted var(--border);
+  border-left: 1px dotted var(--border-default);
 }
 .tree-row {
   display: flex;
@@ -201,12 +200,12 @@ table.data td.mono,
   cursor: pointer;
 }
 .tree-row.expandable:hover {
-  background: var(--panel);
+  background: var(--surface-panel);
 }
 .tree-caret {
   width: 0.9rem;
   display: inline-block;
-  color: var(--muted);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 .tree-key {
@@ -222,7 +221,7 @@ table.data td.mono,
   color: var(--syntax-str);
 }
 .tree-count {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.75rem;
 }
 .tree-toolbar {
@@ -280,7 +279,7 @@ table.data td.mono,
 .stage-meta {
   font-weight: 400;
   color: var(--text-muted);
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
   text-align: right;
 }
@@ -303,7 +302,7 @@ table.data td.mono,
   color: var(--accent-active);
 }
 .hint {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: var(--text-sm);
 }
 /* Host for an imperatively-mounted uPlot. Must NOT target uPlot's own `.uplot`
@@ -335,7 +334,7 @@ table.data td.mono,
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(8px);
   color: var(--text-on-stage);
-  font: var(--text-xs) / 1.3 var(--mono);
+  font: var(--text-xs) / 1.3 var(--font-mono);
   padding: 0.2rem 0.45rem;
   border-radius: var(--radius-xs);
   white-space: nowrap;
