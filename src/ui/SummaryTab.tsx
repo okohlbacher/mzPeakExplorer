@@ -355,8 +355,8 @@ function ManifestTable({
         </tr>
       </thead>
       <tbody>
-        {manifest.map((e) => (
-          <tr key={e.name}>
+        {manifest.map((e, i) => (
+          <tr key={`${i}:${e.name}`}>
             <td className="mono">{e.name}</td>
             <td>{e.entityType || "—"}</td>
             <td>{e.dataKind || "—"}</td>

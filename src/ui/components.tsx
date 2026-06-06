@@ -184,68 +184,6 @@ export function Badge({
   );
 }
 
-export function StatCard({
-  label,
-  value,
-  unit,
-  sub,
-  accent,
-  style,
-}: {
-  label: ReactNode;
-  value: ReactNode;
-  unit?: ReactNode;
-  sub?: ReactNode;
-  accent?: boolean;
-  style?: CSSProperties;
-}) {
-  return (
-    <div
-      style={{
-        border: "1px solid var(--border-default)",
-        borderRadius: "var(--radius-lg)",
-        padding: "0.7rem 0.85rem",
-        background: "var(--surface-card)",
-        minWidth: 0,
-        ...style,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "var(--text-cap)",
-          textTransform: "uppercase",
-          letterSpacing: "var(--tracking-caps)",
-          color: "var(--text-muted)",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: "var(--text-stat)",
-          fontWeight: "var(--weight-semibold)",
-          marginTop: "0.15rem",
-          color: accent ? "var(--accent)" : "var(--text-heading)",
-          wordBreak: "break-word",
-        }}
-      >
-        {value}
-        {unit != null && (
-          <span style={{ fontSize: "var(--text-body)", fontWeight: 400, color: "var(--text-muted)" }}>
-            {" "}
-            {unit}
-          </span>
-        )}
-      </div>
-      {sub != null && (
-        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: "0.1rem" }}>
-          {sub}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export interface NavItem {
   id: string;
   label: string;

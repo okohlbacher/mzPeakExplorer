@@ -29,11 +29,15 @@ export function bag(meta: unknown): Record<string, unknown> {
   return meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
 }
 
-/** Coerce an unknown (number | bigint | string | null) to a finite number or null. */
+/** Coerce a numeric Arrow cell (number | bigint) to a finite number, else null.
+ *  Strings are intentionally rejected so a stray "" can't become a real 0. */
 export function numOrNull(v: unknown): number | null {
-  if (v == null) return null;
-  const n = typeof v === "number" ? v : Number(v as number);
-  return Number.isFinite(n) ? n : null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "bigint") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 /** Representation of a record, from its promoted-column bag with an isProfile fallback. */

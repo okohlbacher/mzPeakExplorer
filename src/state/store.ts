@@ -159,22 +159,24 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async selectSpectrum(index) {
-    if (!reader) return;
-    // Metadata is instant (from the in-memory table) — show it before the signal
-    // arrays finish loading.
-    set({
-      selectedIndex: index,
-      spectrumLoading: true,
-      selectedMeta: getSpectrumMetadata(reader, index),
-    });
+    const r = reader;
+    if (!r) return;
+    const gen = loadGen;
     try {
-      const spectrum = await getSpectrumArrays(reader, index);
-      // Ignore if the user moved on to another spectrum meanwhile.
-      if (get().selectedIndex === index) {
+      // Metadata is instant (from the in-memory table) — show it before the
+      // signal arrays finish loading.
+      const meta = getSpectrumMetadata(r, index);
+      if (gen !== loadGen) return; // a newer file loaded while we read
+      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta });
+      const spectrum = await getSpectrumArrays(r, index);
+      // Ignore if a newer file loaded or the user moved on meanwhile.
+      if (gen === loadGen && get().selectedIndex === index) {
         set({ selectedSpectrum: spectrum, spectrumLoading: false });
       }
     } catch (err) {
-      set({ spectrumLoading: false, error: describeError(err), stage: "error" });
+      if (gen === loadGen) {
+        set({ spectrumLoading: false, error: describeError(err), stage: "error" });
+      }
     }
   },
 
@@ -241,24 +243,43 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   async runXic(mz, tolDa) {
-    if (!reader) return;
+    const r = reader;
+    if (!r) return;
+    const gen = loadGen;
     set({ chromMode: "xic", chromLoading: true, xicParams: { mz, tolDa } });
     try {
+      // The data source (profile vs centroid) comes from the representation
+      // counts, which are only known after the scan — without it a centroid-only
+      // file would be queried as profile and come back empty.
+      if (!get().scanned) await get().computeBreakdown();
+      if (gen !== loadGen) return; // a newer file loaded
       const useProfile = (get().summary?.representationCounts.centroid ?? 0) === 0;
-      const points = await extractChromatogram(reader, { mz, tolDa, useProfile });
+      const points = await extractChromatogram(r, { mz, tolDa, useProfile });
+      if (gen !== loadGen) return;
       set({ chrom: points, chromLoading: false });
     } catch (err) {
-      set({ chromLoading: false, error: describeError(err), stage: "error" });
+      if (gen === loadGen) {
+        set({ chromLoading: false, error: describeError(err), stage: "error" });
+      }
     }
   },
 
   async showTic() {
-    if (!reader) return;
+    const r = reader;
+    if (!r) return;
+    const gen = loadGen;
     set({ chromMode: "tic", chromLoading: true, xicParams: null });
     try {
       // Need the per-spectrum index (promoted TIC column) — scan if not done.
       if (!get().scanned) await get().computeBreakdown();
-      const tic = await buildTic(reader, get().spectra);
+      // A newer file loaded, or the scan failed (error already surfaced): bail.
+      if (gen !== loadGen) return;
+      if (!get().scanned) {
+        set({ chromLoading: false });
+        return;
+      }
+      const tic = await buildTic(r, get().spectra);
+      if (gen !== loadGen) return;
       if (tic === null) {
         set({ chromLoading: false });
         alert(
@@ -270,7 +291,9 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       set({ chrom: tic, chromLoading: false });
     } catch (err) {
-      set({ chromLoading: false, error: describeError(err), stage: "error" });
+      if (gen === loadGen) {
+        set({ chromLoading: false, error: describeError(err), stage: "error" });
+      }
     }
   },
 }));
@@ -288,8 +311,9 @@ async function load(
   set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize });
   try {
     // Open reads only metadata + parquet footers — never the signal data.
-    reader = await open();
-    if (gen !== loadGen) return; // a newer load superseded this one
+    const opened = await open();
+    if (gen !== loadGen) return; // a newer load superseded this one — discard
+    reader = opened;
 
     // Fast overview: counts, layout, encodings, file metadata — O(1), shown now.
     const manifest = readManifest(reader);

@@ -19,7 +19,7 @@ export function IdleLoader() {
 
   function handle(file: File | undefined) {
     if (!file) return;
-    if (!file.name.endsWith(".mzpeak")) {
+    if (!file.name.toLowerCase().endsWith(".mzpeak")) {
       alert("Please select a .mzpeak file.");
       return;
     }
