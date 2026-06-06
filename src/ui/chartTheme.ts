@@ -35,6 +35,35 @@ export function xRange(
   return [a, b > a ? b : a + 1];
 }
 
+/**
+ * Compact number formatting for intensity ticks. Intensities reach 1e8+, and the
+ * full grouped form ("100.000.000") is so wide it clips at the panel edge and the
+ * rotated axis label overprints it. SI suffixes (k/M/G/T) keep ticks ~4 chars.
+ */
+export function compactIntensity(v: number): string {
+  if (!Number.isFinite(v)) return "";
+  const a = Math.abs(v);
+  if (a < 1000) return String(Math.round(v));
+  const units: [number, string][] = [
+    [1e12, "T"],
+    [1e9, "G"],
+    [1e6, "M"],
+    [1e3, "k"],
+  ];
+  for (const [factor, suffix] of units) {
+    if (a >= factor) {
+      const scaled = v / factor;
+      // One decimal only when it adds information (e.g. 1.5M, not 100.0M).
+      const str = Math.abs(scaled) >= 100 ? scaled.toFixed(0) : scaled.toFixed(1);
+      return str.replace(/\.0$/, "") + suffix;
+    }
+  }
+  return String(v);
+}
+
+const yValues: uPlot.Axis.Values = (_u, splits) =>
+  splits.map((s) => (s == null ? "" : compactIntensity(s)));
+
 /** Light-panel axes: dark tick text, faint grid. */
 export function stageAxes(xLabel: string, yLabel: string): uPlot.Axis[] {
   const common = {
@@ -46,6 +75,15 @@ export function stageAxes(xLabel: string, yLabel: string): uPlot.Axis[] {
   };
   return [
     { ...common, label: xLabel, labelGap: 4, labelSize: 22 },
-    { ...common, label: yLabel, labelGap: 4, labelSize: 30 },
+    {
+      ...common,
+      label: yLabel,
+      labelGap: 6,
+      labelSize: 18,
+      values: yValues,
+      // Reserve room for the compact ticks (~5 chars) plus the rotated label, so
+      // neither clips at the panel edge nor overprints the other.
+      size: 58,
+    },
   ];
 }
