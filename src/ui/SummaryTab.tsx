@@ -1,5 +1,6 @@
 import { useStore } from "../state/store";
 import type { ImagingInfo } from "../reader/types";
+import { fmtBytes } from "./format";
 
 // Friendly names for the common IMS scan-geometry CURIEs; falls back to the CURIE.
 const IMS_TERMS: Record<string, string> = {
@@ -19,19 +20,6 @@ function imsTerm(curie: string | null): string {
   if (!curie) return "—";
   const name = IMS_TERMS[curie];
   return name ? `${name} (${curie})` : curie;
-}
-
-function fmtBytes(b: number | null): string {
-  if (b === null) return "—";
-  if (b < 1024) return `${b} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = b / 1024;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(v < 10 ? 2 : 1)} ${units[i]}`;
 }
 
 function fmtRange(r: [number, number] | null, digits = 2): string {

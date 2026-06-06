@@ -4,6 +4,7 @@ import {
   ChartSpline,
   File as FileIcon,
   FolderOpen,
+  FolderTree,
   LayoutDashboard,
   ListTree,
   LoaderCircle,
@@ -16,12 +17,14 @@ import { SummaryTab } from "./SummaryTab";
 import { MetadataTab } from "./MetadataTab";
 import { SpectraTab } from "./SpectraTab";
 import { ChromatogramsTab } from "./ChromatogramsTab";
+import { StructureTab } from "./StructureTab";
 
 const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "summary", label: "Summary", icon: <LayoutDashboard size={17} /> },
   { id: "metadata", label: "Metadata", icon: <ListTree size={17} /> },
   { id: "spectra", label: "Spectra", icon: <Activity size={17} /> },
   { id: "chromatograms", label: "Chromatograms", icon: <ChartSpline size={17} /> },
+  { id: "structure", label: "Structure", icon: <FolderTree size={17} /> },
 ];
 
 /** File mini-inspector pinned to the rail bottom — mirrors mzPeakIV's StatsPanel. */
@@ -226,6 +229,7 @@ export function App() {
           {ready && tab === "metadata" && <MetadataTab />}
           {ready && tab === "spectra" && <SpectraTab />}
           {ready && tab === "chromatograms" && <ChromatogramsTab />}
+          {ready && tab === "structure" && <StructureTab />}
         </main>
       </div>
     </div>

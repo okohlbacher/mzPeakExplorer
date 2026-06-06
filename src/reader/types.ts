@@ -11,6 +11,42 @@ export type ManifestEntry = {
   dataKind: string;
 };
 
+/** One member of the `.mzpeak` ZIP archive (Structure tab). */
+export type ArchiveEntry = {
+  path: string;
+  compressedSize: number;
+  uncompressedSize: number;
+  isDirectory: boolean;
+  isParquet: boolean;
+};
+
+/** The ZIP listing plus its rolled-up totals. */
+export type ArchiveListing = {
+  entries: ArchiveEntry[];
+  totalCompressed: number;
+  totalUncompressed: number;
+};
+
+/** Per-column footprint inside a parquet file (summed across row groups). */
+export type ParquetColumn = {
+  name: string;
+  compressedSize: number;
+  uncompressedSize: number;
+  numValues: number;
+  compression: string;
+};
+
+/** Internal table structure of one parquet member (from its footer metadata). */
+export type ParquetInfo = {
+  numRows: number;
+  numColumns: number;
+  numRowGroups: number;
+  totalCompressed: number;
+  totalUncompressed: number;
+  columns: ParquetColumn[];
+  createdBy: string | null;
+};
+
 /** The five file-level metadata groups, kept generic for the tree view. */
 export type FileMeta = {
   fileDescription: unknown;

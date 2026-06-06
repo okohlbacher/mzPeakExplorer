@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { openBlob, openUrl, type Reader } from "../reader/open";
 import { fileMeta as readFileMeta, indexMetadata, manifest as readManifest } from "../reader/meta";
 import { computeFastSummary, scanSpectra } from "../reader/summary";
+import { listArchive, readParquetInfo } from "../reader/archive";
 import {
   chromatogramIds,
   extractChromatogram,
@@ -11,11 +12,13 @@ import {
   getStoredChromatogram,
 } from "../reader/browse";
 import type {
+  ArchiveListing,
   ChromPoint,
   FileMeta,
   FileSummary,
   LoadStage,
   ManifestEntry,
+  ParquetInfo,
   SpectrumArrays,
   SpectrumIndexRow,
 } from "../reader/types";
@@ -33,7 +36,7 @@ let loadGen = 0;
 // pass instead of each kicking off a duplicate or no-oping while one is running.
 let scanInFlight: Promise<void> | null = null;
 
-export type Tab = "summary" | "metadata" | "spectra" | "chromatograms";
+export type Tab = "summary" | "metadata" | "spectra" | "chromatograms" | "structure";
 export type ChromMode = "tic" | "xic";
 
 type XicParams = { mz: number; tolDa: number };
@@ -472,4 +475,15 @@ async function buildTic(
 export async function loadStoredChromatogram(index: number) {
   if (!reader) return null;
   return getStoredChromatogram(reader, index);
+}
+
+/** ZIP archive listing for the Structure tab (sync — entries are already loaded). */
+export function getArchiveListing(): ArchiveListing | null {
+  return reader ? listArchive(reader) : null;
+}
+
+/** Parquet footer structure for one archive member (Structure tab, lazy). */
+export async function getParquetInfo(filename: string): Promise<ParquetInfo | null> {
+  if (!reader) return null;
+  return readParquetInfo(reader, filename);
 }
