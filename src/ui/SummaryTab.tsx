@@ -1,6 +1,7 @@
 import { useStore } from "../state/store";
 import type { ImagingInfo } from "../reader/types";
 import { fmtBytes } from "./format";
+import { accessionIn, cvTitle, useCvTerms } from "./cvTerms";
 
 // Friendly names for the common IMS scan-geometry CURIEs; falls back to the CURIE.
 const IMS_TERMS: Record<string, string> = {
@@ -45,6 +46,7 @@ function Card({
 }
 
 function ImagingSection({ img }: { img: ImagingInfo }) {
+  const cv = useCvTerms();
   const grid = img.pixelCount
     ? `${img.pixelCount.x} × ${img.pixelCount.y}` +
       (img.pixelCount.z ? ` × ${img.pixelCount.z}` : "") +
@@ -95,25 +97,25 @@ function ImagingSection({ img }: { img: ImagingInfo }) {
               {img.scanType && (
                 <tr>
                   <th>Scan type</th>
-                  <td className="mono">{imsTerm(img.scanType)}</td>
+                  <td className="mono" title={cvTitle(cv, img.scanType)}>{imsTerm(img.scanType)}</td>
                 </tr>
               )}
               {img.scanPattern && (
                 <tr>
                   <th>Scan pattern</th>
-                  <td className="mono">{imsTerm(img.scanPattern)}</td>
+                  <td className="mono" title={cvTitle(cv, img.scanPattern)}>{imsTerm(img.scanPattern)}</td>
                 </tr>
               )}
               {img.lineScanDirection && (
                 <tr>
                   <th>Line-scan direction</th>
-                  <td className="mono">{imsTerm(img.lineScanDirection)}</td>
+                  <td className="mono" title={cvTitle(cv, img.lineScanDirection)}>{imsTerm(img.lineScanDirection)}</td>
                 </tr>
               )}
               {img.linescanSequence && (
                 <tr>
                   <th>Line-scan sequence</th>
-                  <td className="mono">{imsTerm(img.linescanSequence)}</td>
+                  <td className="mono" title={cvTitle(cv, img.linescanSequence)}>{imsTerm(img.linescanSequence)}</td>
                 </tr>
               )}
             </>
@@ -168,6 +170,7 @@ export function SummaryTab() {
   const scanned = useStore((st) => st.scanned);
   const scanProgress = useStore((st) => st.scanProgress);
   const computeBreakdown = useStore((st) => st.computeBreakdown);
+  const cv = useCvTerms();
   if (!s) return null;
 
   const pct =
@@ -317,7 +320,7 @@ export function SummaryTab() {
       ) : (
         <div className="chips">
           {s.encodings.map((e) => (
-            <span className="chip" key={e}>
+            <span className="chip" key={e} title={cvTitle(cv, accessionIn(e))}>
               {e}
             </span>
           ))}

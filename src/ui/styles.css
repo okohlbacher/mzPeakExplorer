@@ -237,6 +237,17 @@ table.data td.mono,
 .tree-cv {
   color: var(--syntax-cv);
 }
+/* Ontology term name shown inline after a bare CV accession. */
+.tree-cv-name {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.tree-cv-name::before {
+  content: "·";
+  margin: 0 0.35rem 0 0.15rem;
+  color: var(--border-strong);
+  font-style: normal;
+}
 .tree-val {
   color: var(--syntax-num);
 }

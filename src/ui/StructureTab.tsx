@@ -9,6 +9,7 @@ import {
 import { getArchiveListing, getParquetInfo } from "../state/store";
 import type { ArchiveEntry, ArchiveListing, ParquetInfo } from "../reader/types";
 import { fmtBytes } from "./format";
+import { accessionIn, cvTitle, useCvTerms } from "./cvTerms";
 
 /** Horizontal proportion bar (fraction 0..1) used for relative sizes. */
 function Bar({ frac, color }: { frac: number; color?: string }) {
@@ -49,6 +50,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
 
 /** Per-column footprint table for an expanded parquet member (lazy-loaded). */
 function ParquetDetail({ filename }: { filename: string }) {
+  const cv = useCvTerms();
   // undefined = loading, null = unavailable.
   const [info, setInfo] = useState<ParquetInfo | null | undefined>(undefined);
   useEffect(() => {
@@ -103,7 +105,7 @@ function ParquetDetail({ filename }: { filename: string }) {
         <tbody>
           {info.columns.map((c) => (
             <tr key={c.name}>
-              <td className="mono">{c.name}</td>
+              <td className="mono" title={cvTitle(cv, accessionIn(c.name))}>{c.name}</td>
               <td className="mono" style={{ color: "var(--text-secondary)" }}>{c.type}</td>
               <td style={{ fontVariantNumeric: "tabular-nums" }}>
                 {fmtBytes(c.compressedSize)}

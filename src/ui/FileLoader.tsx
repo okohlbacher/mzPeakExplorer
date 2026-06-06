@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { useStore } from "../state/store";
 import { Logo } from "./components";
 
@@ -91,6 +92,31 @@ export function IdleLoader() {
           e.target.value = "";
         }}
       />
+
+      <div
+        style={{
+          marginTop: "0.9rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.45rem",
+          padding: "0.5rem 0.7rem",
+          border: "1px solid var(--border-soft)",
+          borderRadius: "var(--radius-md)",
+          background: "var(--surface-panel)",
+          fontSize: "var(--text-sm)",
+          color: "var(--text-secondary)",
+          lineHeight: "var(--leading-snug)",
+        }}
+      >
+        <ShieldCheck size={15} style={{ color: "var(--green-700)", flexShrink: 0 }} />
+        <span>
+          <strong style={{ color: "var(--text-body)" }}>Private by design.</strong>{" "}
+          Your file is read entirely in this browser tab and is{" "}
+          <strong style={{ color: "var(--text-body)" }}>never uploaded</strong> —
+          no server, no backend. (The demo is the only file fetched over the network.)
+        </span>
+      </div>
 
       <p style={{ marginTop: "0.8rem", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
         or{" "}
