@@ -92,17 +92,19 @@ function ParquetDetail({ filename }: { filename: string }) {
       <table className="data" style={{ maxWidth: 720 }}>
         <thead>
           <tr>
-            <th style={{ width: "30%" }}>Column</th>
-            <th style={{ width: 130 }}>Compressed</th>
+            <th style={{ width: "28%" }}>Column</th>
+            <th style={{ width: 110 }}>Type</th>
+            <th style={{ width: 120 }}>Compressed</th>
             <th>Share</th>
             <th style={{ width: 90, textAlign: "right" }}>Values</th>
-            <th style={{ width: 90 }}>Codec</th>
+            <th style={{ width: 80 }}>Codec</th>
           </tr>
         </thead>
         <tbody>
           {info.columns.map((c) => (
             <tr key={c.name}>
               <td className="mono">{c.name}</td>
+              <td className="mono" style={{ color: "var(--text-secondary)" }}>{c.type}</td>
               <td style={{ fontVariantNumeric: "tabular-nums" }}>
                 {fmtBytes(c.compressedSize)}
               </td>

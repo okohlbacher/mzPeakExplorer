@@ -30,6 +30,7 @@ export type ArchiveListing = {
 /** Per-column footprint inside a parquet file (summed across row groups). */
 export type ParquetColumn = {
   name: string;
+  type: string;
   compressedSize: number;
   uncompressedSize: number;
   numValues: number;

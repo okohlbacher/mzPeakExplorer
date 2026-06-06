@@ -2,6 +2,7 @@
 // entry list (filenames + sizes) and, for parquet members, the footer metadata
 // (row/column counts and per-column byte footprint) — all metadata-only, no bulk
 // data is materialized.
+import { tableFromIPC } from "apache-arrow";
 import type { Reader } from "./open";
 import type {
   ArchiveListing,
@@ -71,7 +72,92 @@ type ParquetHandle = {
     numRowGroups(): number;
     rowGroup(i: number): { columns(): ColumnChunk[] };
   };
+  schema(): { intoIPCStream(): Uint8Array };
 };
+
+// Structural view of an Arrow Field / DataType from the reader's decoded vectors.
+// (parquet-wasm's schema-only IPC stream can't be read by the app's apache-arrow
+// build — it rejects LargeList — so we read types from the live vectors instead.)
+type ArrowType = { toString(): string; children?: ArrowField[] };
+type ArrowField = { name: string; type: ArrowType };
+type StructVector = { type?: ArrowType } | null | undefined;
+
+function isList(t: ArrowType): boolean {
+  return /^(?:Large)?(?:FixedSize)?List/.test(String(t));
+}
+
+/** Walk one field, emitting leaf paths that mirror parquet's columnPath(). */
+function walkField(field: ArrowField, prefix: string, out: Map<string, string>): void {
+  const path = prefix ? `${prefix}.${field.name}` : field.name;
+  const t = field.type;
+  const children = t?.children;
+  if (children && children.length > 0) {
+    if (isList(t)) {
+      // Parquet inserts a "list" group above the element field ("item"/"element").
+      walkField(children[0], `${path}.list`, out);
+    } else {
+      for (const c of children) walkField(c, path, out); // struct
+    }
+  } else {
+    out.set(path, String(t));
+  }
+}
+
+function walkStruct(vec: StructVector, prefix: string, out: Map<string, string>): void {
+  for (const c of vec?.type?.children ?? []) walkField(c, prefix, out);
+}
+
+/**
+ * Map each leaf column path (e.g. "spectrum.time", "scan.MS_1000512_filter_string")
+ * to its Arrow logical type, read from the reader's already-decoded struct vectors.
+ * Covers the metadata tables (the rich ones); other members get an empty map and
+ * the column table renders without a type.
+ */
+function columnTypes(reader: Reader, filename: string): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    const r = reader as unknown as {
+      spectrumMetadata?: Record<string, StructVector>;
+      chromatogramMetadata?: Record<string, StructVector>;
+    };
+    const f = filename.toLowerCase();
+    const meta = f.includes("meta");
+    if (meta && f.includes("spectr") && r.spectrumMetadata) {
+      const sm = r.spectrumMetadata;
+      walkStruct(sm.spectra, "spectrum", out);
+      walkStruct(sm.scans, "scan", out);
+      walkStruct(sm.precursors, "precursor", out);
+      walkStruct(sm.selectedIons, "selected_ion", out);
+    } else if (meta && f.includes("chrom") && r.chromatogramMetadata) {
+      const cm = r.chromatogramMetadata;
+      walkStruct(cm.chromatograms, "chromatogram", out);
+      walkStruct(cm.precursors, "precursor", out);
+      walkStruct(cm.selectedIons, "selected_ion", out);
+    }
+  } catch {
+    /* leave empty — types are best-effort */
+  }
+  return out;
+}
+
+/**
+ * Fallback for the data/peaks members (no decoded vector): read the Arrow schema
+ * from the parquet footer. Works for point-layout files; chunked-layout files use
+ * LargeList, which the app's apache-arrow build can't decode from IPC, so they
+ * fall through to an empty map (those columns render without a type).
+ */
+function ipcColumnTypes(handle: ParquetHandle): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    const schema = tableFromIPC(handle.schema().intoIPCStream()).schema;
+    for (const field of schema.fields as unknown as ArrowField[]) {
+      walkField(field, "", out);
+    }
+  } catch {
+    /* unsupported schema type (e.g. LargeList) — leave empty */
+  }
+  return out;
+}
 type ParquetStore = Record<string, (() => Promise<ParquetHandle | undefined>) | undefined>;
 
 /**
@@ -127,6 +213,10 @@ export async function readParquetInfo(
   const numRows = num(fileMd.numRows());
   const createdBy = fileMd.createdBy() ?? null;
   const numRowGroups = md.numRowGroups();
+  // Prefer the reader's decoded vectors (metadata tables); fall back to the
+  // parquet footer schema for data/peaks members.
+  let types = columnTypes(reader, filename);
+  if (types.size === 0) types = ipcColumnTypes(handle);
 
   // Sum each column's footprint across all row groups.
   const byColumn = new Map<string, ParquetColumn>();
@@ -144,6 +234,7 @@ export async function readParquetInfo(
       } else {
         byColumn.set(name, {
           name,
+          type: types.get(name) ?? "—",
           compressedSize,
           uncompressedSize,
           numValues,
