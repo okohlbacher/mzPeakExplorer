@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Activity,
   ChartSpline,
+  Check,
   File as FileIcon,
   FolderOpen,
   FolderTree,
   LayoutDashboard,
+  Link2,
   ListTree,
   LoaderCircle,
 } from "lucide-react";
@@ -72,6 +74,7 @@ export function App() {
   const stage = useStore((s) => s.stage);
   const error = useStore((s) => s.error);
   const fileName = useStore((s) => s.fileName);
+  const sourceUrl = useStore((s) => s.sourceUrl);
   const numSpectra = useStore((s) => s.summary?.numSpectra);
   const openFile = useStore((s) => s.openFile);
   const openUrl = useStore((s) => s.openUrl);
@@ -84,6 +87,28 @@ export function App() {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
+
+  // Deep link: ?file=<url> (alias ?url=) auto-opens an external mzPeak on load,
+  // so links like .../mzPeakExplorer/?file=https://host/x.mzpeak start the viewer
+  // directly on that file. The remote host must allow CORS + range requests.
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    if (deepLinkDone.current) return;
+    deepLinkDone.current = true;
+    const p = new URLSearchParams(window.location.search);
+    const fileUrl = p.get("file") ?? p.get("url");
+    if (fileUrl && /^https?:\/\//i.test(fileUrl)) void openUrl(fileUrl);
+  }, [openUrl]);
+
+  const [copied, setCopied] = useState(false);
+  function copyDeepLink() {
+    if (!sourceUrl) return;
+    const link = `${window.location.origin}${window.location.pathname}?file=${encodeURIComponent(sourceUrl)}`;
+    void navigator.clipboard?.writeText(link).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    });
+  }
 
   const fileInput = useRef<HTMLInputElement>(null);
   function pickFile() {
@@ -138,6 +163,17 @@ export function App() {
         right={
           <>
             {fileChip}
+            {ready && sourceUrl && (
+              <Button
+                variant="ghost"
+                size="sm"
+                iconLeft={copied ? <Check size={15} /> : <Link2 size={15} />}
+                onClick={copyDeepLink}
+                title="Copy a shareable link that opens this file directly"
+              >
+                {copied ? "Copied" : "Copy link"}
+              </Button>
+            )}
             {ready ? (
               <Button
                 variant="secondary"
@@ -207,7 +243,9 @@ export function App() {
         <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", padding: "1.1rem 1.3rem", display: "flex", flexDirection: "column" }}>
           {error && <div className="banner-error" style={{ margin: "0 0 0.75rem" }}>{error}</div>}
 
-          {stage === "idle" && <IdleLoader />}
+          {/* Show the loader on error too, so a failed open (e.g. a bad deep
+              link) can be recovered without a manual reload. */}
+          {(stage === "idle" || stage === "error") && <IdleLoader />}
 
           {loading && (
             <div

@@ -49,6 +49,8 @@ type State = {
 
   fileName: string | null;
   fileSize: number | null;
+  /** Set when the file was opened from a URL (enables the shareable deep link). */
+  sourceUrl: string | null;
   summary: FileSummary | null;
   fileMeta: FileMeta | null;
   manifest: ManifestEntry[];
@@ -103,6 +105,7 @@ const initial: State = {
   error: null,
   fileName: null,
   fileSize: null,
+  sourceUrl: null,
   summary: null,
   fileMeta: null,
   manifest: [],
@@ -137,12 +140,12 @@ export const useStore = create<State & Actions>((set, get) => ({
   setTab: (tab) => set({ tab, error: null }),
 
   async openFile(file) {
-    await load(set, get, file.name, file.size, () => openBlob(file));
+    await load(set, get, file.name, file.size, () => openBlob(file), null);
   },
 
   async openUrl(url) {
     const name = url.split("/").pop() || url;
-    await load(set, get, name, null, () => openUrl(url));
+    await load(set, get, name, null, () => openUrl(url), url);
   },
 
   // Run the per-spectrum scan on demand (the "Compute breakdown" / "Build TIC" /
@@ -320,10 +323,11 @@ async function load(
   fileName: string,
   fileSize: number | null,
   open: () => Promise<Reader>,
+  sourceUrl: string | null,
 ): Promise<void> {
   const gen = ++loadGen;
   scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
-  set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize });
+  set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize, sourceUrl });
   try {
     // Open reads only metadata + parquet footers — never the signal data.
     const opened = await open();
