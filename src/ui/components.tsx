@@ -8,6 +8,30 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { LoaderCircle } from "lucide-react";
+
+/** Centered spinner overlay for a plot host while its data is being fetched.
+ *  The parent must be position:relative. */
+export function PlotSpinner({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.5rem",
+        color: "var(--text-secondary)",
+        background: "rgba(255, 255, 255, 0.66)",
+        fontSize: "var(--text-sm)",
+        zIndex: 5,
+      }}
+    >
+      <LoaderCircle size={18} className="spin" /> {label}
+    </div>
+  );
+}
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}openms-logo.png`;
 

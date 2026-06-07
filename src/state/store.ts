@@ -37,6 +37,62 @@ let loadGen = 0;
 // pass instead of each kicking off a duplicate or no-oping while one is running.
 let scanInFlight: Promise<void> | null = null;
 
+// ── In-memory spectrum cache + background preloader ─────────────────────────
+// After a file opens, decoded spectrum signal arrays are cached (insertion-order
+// LRU) so navigating spectra is instant. A background pass preloads as many as
+// fit in a memory budget. The cache is keyed by spectrum index and reset on each
+// new load; the preloader cancels via the loadGen check.
+let specCache = new Map<number, SpectrumArrays>();
+let specCacheBytes = 0;
+
+/** Cache budget: scale modestly with device memory, clamped to a tab-safe range. */
+const CACHE_BUDGET_BYTES = (() => {
+  const gb = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 4;
+  const mb = Math.min(Math.max(gb * 96, 192), 768);
+  return mb * 1024 * 1024;
+})();
+
+function specBytes(s: SpectrumArrays): number {
+  return s.mz.byteLength + s.intensity.byteLength;
+}
+
+function resetSpecCache(): void {
+  specCache = new Map();
+  specCacheBytes = 0;
+}
+
+// All signal reads (spectrum arrays, XIC/TIC extraction) go through one queue so
+// the background preloader never reads the vendored reader concurrently with a
+// user-triggered read — the reader is not assumed reentrant. Cache hits bypass
+// this entirely, so once preloaded, navigation stays instant.
+let readChain: Promise<unknown> = Promise.resolve();
+function serialRead<T>(fn: () => Promise<T>): Promise<T> {
+  const run = readChain.then(fn, fn);
+  readChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
+/** Insert (or refresh) a spectrum, evicting the oldest entries past the budget. */
+function cacheSpectrum(index: number, s: SpectrumArrays): void {
+  if (specCache.has(index)) {
+    specCache.delete(index); // re-insert to mark most-recently-used
+    specCache.set(index, s);
+    return;
+  }
+  specCache.set(index, s);
+  specCacheBytes += specBytes(s);
+  while (specCacheBytes > CACHE_BUDGET_BYTES && specCache.size > 1) {
+    const oldest = specCache.keys().next().value as number;
+    if (oldest === index) break; // never evict the just-added one
+    const old = specCache.get(oldest);
+    specCache.delete(oldest);
+    if (old) specCacheBytes -= specBytes(old);
+  }
+}
+
 export type Tab = "summary" | "metadata" | "spectra" | "chromatograms" | "structure";
 export type ChromMode = "tic" | "xic";
 
@@ -80,6 +136,8 @@ type State = {
   storedChromIds: { index: number; id: string }[];
   /** True once the Browse tab has lazily loaded its first spectrum + cheap TIC. */
   browseInited: boolean;
+  /** Spectra preloaded into the in-memory cache (background buffering progress). */
+  buffered: number;
 };
 
 type Actions = {
@@ -124,6 +182,7 @@ const initial: State = {
   xicParams: null,
   storedChromIds: [],
   browseInited: false,
+  buffered: 0,
   msLevelFilter: null,
 };
 
@@ -172,15 +231,22 @@ export const useStore = create<State & Actions>((set, get) => ({
     if (!r) return;
     const gen = loadGen;
     try {
-      // Metadata is instant (from the in-memory table) — show it before the
-      // signal arrays finish loading.
       const meta = getSpectrumMetadata(r, index);
       if (gen !== loadGen) return; // a newer file loaded while we read
-      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, error: null });
-      const spectrum = await getSpectrumArrays(r, index);
+      // Cache hit (preloaded or previously viewed): show instantly, no spinner.
+      const cached = specCache.get(index);
+      if (cached) {
+        cacheSpectrum(index, cached); // refresh LRU
+        set({ selectedIndex: index, selectedMeta: meta, selectedSpectrum: cached, spectrumLoading: false, error: null });
+        return;
+      }
+      // Cache miss: metadata is instant; show the spinner while the signal loads.
+      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, selectedSpectrum: null, error: null });
+      const spectrum = await serialRead(() => getSpectrumArrays(r, index));
+      cacheSpectrum(index, spectrum);
       // Ignore if a newer file loaded or the user moved on meanwhile.
       if (gen === loadGen && get().selectedIndex === index) {
-        set({ selectedSpectrum: spectrum, spectrumLoading: false });
+        set({ selectedSpectrum: spectrum, spectrumLoading: false, buffered: specCache.size });
       }
     } catch (err) {
       // A spectrum that can't be decoded (e.g. an unsupported array compression)
@@ -270,7 +336,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       if (!get().scanned) await get().computeBreakdown();
       if (gen !== loadGen) return; // a newer file loaded
       const useProfile = (get().summary?.representationCounts.centroid ?? 0) === 0;
-      const points = await extractChromatogram(r, { mz, tolDa, useProfile });
+      const points = await serialRead(() => extractChromatogram(r, { mz, tolDa, useProfile }));
       if (gen !== loadGen) return;
       set({ chrom: points, chromLoading: false, error: null });
     } catch (err) {
@@ -327,6 +393,7 @@ async function load(
 ): Promise<void> {
   const gen = ++loadGen;
   scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
+  resetSpecCache(); // drop the previous file's cached spectra
   set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize, sourceUrl });
   try {
     // Open reads only metadata + parquet footers — never the signal data.
@@ -359,6 +426,11 @@ async function load(
     if (summary.numSpectra > 0 && summary.numSpectra <= AUTO_SCAN_LIMIT) {
       void ensureScan(set, get);
     }
+
+    // Background warm-up: now that the overview is on screen, preload the TIC and
+    // as many spectrum signal arrays as fit in the memory budget, so the Spectra
+    // and Chromatograms tabs are already buffered when the user gets there.
+    if (summary.numSpectra > 0) void preloadInBackground(set, get, opened, gen);
   } catch (err) {
     if (gen !== loadGen) return;
     reader = null;
@@ -432,11 +504,58 @@ async function runScan(
       : prev,
     selectedIndex: get().selectedIndex ?? (rows.length > 0 ? 0 : null),
   });
-  // If Browse is showing the TIC, fill in the cheap TIC now that we have the index.
+  // Preload the cheap TIC so the Chromatograms tab is ready before it's opened
+  // (only when not already showing an XIC).
   const s = get();
-  if (s.browseInited && s.chromMode === "tic" && !s.chrom) {
+  if (s.chromMode === "tic" && !s.chrom) {
     const cheap = cheapTic(rows);
     if (cheap) set({ chrom: cheap });
+  }
+}
+
+/**
+ * After the overview is shown, warm the caches in the background: ensure the scan
+ * (cheap, column-based — fills the Browse index + TIC), then preload spectrum
+ * signal arrays into the in-memory cache until the budget is hit. Cancels when a
+ * newer file supersedes this one (gen check) and never blocks the UI (yields
+ * between reads). Unreadable spectra (e.g. unsupported compression) are skipped.
+ */
+async function preloadInBackground(
+  set: (partial: Partial<State>) => void,
+  get: () => State & Actions,
+  r: Reader,
+  gen: number,
+): Promise<void> {
+  // Index + TIC first (so Chromatograms is buffered). ensureScan dedupes with the
+  // auto-scan; for large files this triggers the (fast) column scan in the bg.
+  await ensureScan(set, get);
+  if (gen !== loadGen) return;
+
+  if (specCacheBytes >= CACHE_BUDGET_BYTES) return; // nothing more fits
+  const n = get().summary?.numSpectra ?? 0;
+  if (n === 0) return;
+
+  // Visit indices nearest the current selection first, so Prev/Next is instant.
+  const sel = get().selectedIndex ?? 0;
+  const order = Array.from({ length: n }, (_, i) => i).sort(
+    (a, b) => Math.abs(a - sel) - Math.abs(b - sel),
+  );
+
+  // Single sequential pass: all reads go through serialRead anyway, and a
+  // user-triggered read interleaves naturally (its cache miss queues one slot).
+  for (const idx of order) {
+    if (gen !== loadGen) return; // superseded by a newer load
+    if (specCacheBytes >= CACHE_BUDGET_BYTES) return; // budget reached
+    if (specCache.has(idx)) continue;
+    try {
+      const s = await serialRead(() => getSpectrumArrays(r, idx));
+      if (gen !== loadGen) return;
+      cacheSpectrum(idx, s);
+      if (gen === loadGen) set({ buffered: specCache.size });
+    } catch {
+      // Skip spectra the reader can't decode — preloading must never error out.
+    }
+    await new Promise<void>((res) => setTimeout(res, 0)); // yield to the UI
   }
 }
 
@@ -481,7 +600,7 @@ async function buildTic(
   if (cheap) return cheap;
   if (rows.length > AUTO_SCAN_LIMIT) return null; // too expensive to sum
   const useProfile = rows.some((row) => row.representation !== "centroid");
-  const all = await extractChromatogram(r, { useProfile });
+  const all = await serialRead(() => extractChromatogram(r, { useProfile }));
   // Restrict the summed trace to MS1 spectra.
   const ms1 = new Set(rows.filter((row) => row.msLevel === 1).map((row) => row.index));
   return ms1.size > 0 ? all.filter((p) => ms1.has(p.index)) : all;

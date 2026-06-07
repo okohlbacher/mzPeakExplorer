@@ -32,6 +32,7 @@ const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
 /** File mini-inspector pinned to the rail bottom — mirrors mzPeakIV's StatsPanel. */
 function MiniInspector() {
   const s = useStore((st) => st.summary);
+  const buffered = useStore((st) => st.buffered);
   if (!s) return null;
   const row = (k: string, v: string) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", padding: "0.14rem 0", lineHeight: 1.3 }}>
@@ -64,6 +65,9 @@ function MiniInspector() {
       {row("m/z", mz)}
       {row("Layout", s.layout)}
       {row("Imaging", s.isImaging ? "yes" : "no")}
+      {buffered > 0 &&
+        buffered < s.numSpectra &&
+        row("Buffered", `${buffered.toLocaleString()} / ${s.numSpectra.toLocaleString()}`)}
     </div>
   );
 }

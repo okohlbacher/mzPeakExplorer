@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { ChromPlot } from "./ChromPlot";
-import { Button, TextField } from "./components";
+import { Button, PlotSpinner, TextField } from "./components";
 
 /** The Chromatograms view: the total-ion chromatogram and extracted-ion
  *  chromatograms (XIC). Clicking a point selects the spectrum at that retention
@@ -107,11 +107,14 @@ export function ChromatogramsTab() {
           </h4>
           {chrom || chromLoading ? (
             <>
-              <ChromPlot
-                points={chrom ?? []}
-                onPick={(t) => void selectByTime(t)}
-                selectedTime={selTime}
-              />
+              <div style={{ position: "relative" }}>
+                <ChromPlot
+                  points={chrom ?? []}
+                  onPick={(t) => void selectByTime(t)}
+                  selectedTime={selTime}
+                />
+                {chromLoading && <PlotSpinner label="Loading chromatogram…" />}
+              </div>
               <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
                 Click a point to select the nearest spectrum · scroll to zoom ·
                 drag to box-zoom RT

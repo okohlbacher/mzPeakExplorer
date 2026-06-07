@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useStore } from "../state/store";
 import { SpectrumPlot } from "./SpectrumPlot";
 import { TreeView } from "./TreeView";
-import { Button, Select, TextField } from "./components";
+import { Button, PlotSpinner, Select, TextField } from "./components";
 
 /** The Spectra view: navigate + inspect individual spectra (optionally filtered
  *  by MS level). The TIC / XIC chromatogram lives in the Chromatograms tab. */
@@ -174,10 +174,13 @@ export function SpectraTab() {
               })()}
             </span>
           </h4>
-          <SpectrumPlot
-            spectrum={selectedSpectrum}
-            xicWindow={chromMode === "xic" ? xicParams : null}
-          />
+          <div style={{ position: "relative" }}>
+            <SpectrumPlot
+              spectrum={selectedSpectrum}
+              xicWindow={chromMode === "xic" ? xicParams : null}
+            />
+            {spectrumLoading && <PlotSpinner label="Loading spectrum…" />}
+          </div>
           <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
             {reprHint ? `${reprHint} · ` : ""}scroll to zoom · drag a box to zoom
             m/z · middle-drag to pan · double-click to reset
