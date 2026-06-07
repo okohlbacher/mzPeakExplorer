@@ -15,6 +15,7 @@ import {
 import { useStore, type Tab } from "../state/store";
 import { AppHeader, Badge, Button, Logo, SideNav, type NavItem } from "./components";
 import { DEMO_URL, IdleLoader } from "./FileLoader";
+import { SettingsMenu } from "./SettingsMenu";
 import { SummaryTab } from "./SummaryTab";
 import { MetadataTab } from "./MetadataTab";
 import { SpectraTab } from "./SpectraTab";
@@ -33,6 +34,7 @@ const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
 function MiniInspector() {
   const s = useStore((st) => st.summary);
   const buffered = useStore((st) => st.buffered);
+  const preload = useStore((st) => st.settings.preload);
   if (!s) return null;
   const row = (k: string, v: string) => (
     <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", padding: "0.14rem 0", lineHeight: 1.3 }}>
@@ -65,7 +67,8 @@ function MiniInspector() {
       {row("m/z", mz)}
       {row("Layout", s.layout)}
       {row("Imaging", s.isImaging ? "yes" : "no")}
-      {buffered > 0 &&
+      {preload &&
+        buffered > 0 &&
         buffered < s.numSpectra &&
         row("Buffered", `${buffered.toLocaleString()} / ${s.numSpectra.toLocaleString()}`)}
     </div>
@@ -167,6 +170,7 @@ export function App() {
         right={
           <>
             {fileChip}
+            <SettingsMenu />
             {ready && sourceUrl && (
               <Button
                 variant="ghost"

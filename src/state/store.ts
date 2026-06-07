@@ -45,12 +45,57 @@ let scanInFlight: Promise<void> | null = null;
 let specCache = new Map<number, SpectrumArrays>();
 let specCacheBytes = 0;
 
-/** Cache budget: scale modestly with device memory, clamped to a tab-safe range. */
-const CACHE_BUDGET_BYTES = (() => {
+// ── User-configurable cache settings ────────────────────────────────────────
+// Persisted in sessionStorage (per browser session) and presettable via URL
+// (?preload=0/1, ?cacheMB=<n>). `cacheBudgetBytes` / `preloadEnabled` mirror the
+// settings as plain module vars so the hot cache paths don't read React state.
+export type Settings = { preload: boolean; cacheMB: number };
+const SETTINGS_KEY = "mzpe.settings";
+
+/** Default budget: scale modestly with device memory, clamped to a tab-safe range. */
+function defaultCacheMB(): number {
   const gb = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 4;
-  const mb = Math.min(Math.max(gb * 96, 192), 768);
-  return mb * 1024 * 1024;
-})();
+  return Math.min(Math.max(Math.round(gb * 96), 192), 768);
+}
+function clampMB(n: number): number {
+  return Number.isFinite(n) ? Math.min(Math.max(Math.round(n), 0), 4096) : defaultCacheMB();
+}
+function loadSettings(): Settings {
+  const s: Settings = { preload: true, cacheMB: defaultCacheMB() };
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const j = JSON.parse(raw) as Partial<Settings>;
+      if (typeof j.preload === "boolean") s.preload = j.preload;
+      if (typeof j.cacheMB === "number") s.cacheMB = clampMB(j.cacheMB);
+    }
+  } catch {
+    /* ignore malformed/blocked storage */
+  }
+  try {
+    const p = new URLSearchParams(location.search); // URL preset/override
+    const pl = p.get("preload");
+    if (pl != null) s.preload = !/^(0|false|off|no)$/i.test(pl);
+    const mb = p.get("cacheMB") ?? p.get("cachemb");
+    if (mb != null) s.cacheMB = clampMB(Number(mb));
+  } catch {
+    /* no window / bad search */
+  }
+  return s;
+}
+function saveSettings(s: Settings): void {
+  try {
+    sessionStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    /* ignore */
+  }
+}
+
+const initialSettings = loadSettings();
+saveSettings(initialSettings); // persist a URL-preset for the rest of the session
+let cacheBudgetBytes = initialSettings.cacheMB * 1024 * 1024;
+let preloadEnabled = initialSettings.preload;
+let preloadRunning = false;
 
 function specBytes(s: SpectrumArrays): number {
   return s.mz.byteLength + s.intensity.byteLength;
@@ -59,6 +104,16 @@ function specBytes(s: SpectrumArrays): number {
 function resetSpecCache(): void {
   specCache = new Map();
   specCacheBytes = 0;
+}
+
+/** Evict oldest cached spectra until within the current budget (keeps ≥1). */
+function evictToBudget(): void {
+  while (specCacheBytes > cacheBudgetBytes && specCache.size > 1) {
+    const oldest = specCache.keys().next().value as number;
+    const old = specCache.get(oldest);
+    specCache.delete(oldest);
+    if (old) specCacheBytes -= specBytes(old);
+  }
 }
 
 // All signal reads (spectrum arrays, XIC/TIC extraction) go through one queue so
@@ -82,15 +137,9 @@ function cacheSpectrum(index: number, s: SpectrumArrays): void {
     specCache.set(index, s);
     return;
   }
-  specCache.set(index, s);
+  specCache.set(index, s); // newest → last, so eviction (oldest-first) spares it
   specCacheBytes += specBytes(s);
-  while (specCacheBytes > CACHE_BUDGET_BYTES && specCache.size > 1) {
-    const oldest = specCache.keys().next().value as number;
-    if (oldest === index) break; // never evict the just-added one
-    const old = specCache.get(oldest);
-    specCache.delete(oldest);
-    if (old) specCacheBytes -= specBytes(old);
-  }
+  evictToBudget();
 }
 
 export type Tab = "summary" | "metadata" | "spectra" | "chromatograms" | "structure";
@@ -138,6 +187,8 @@ type State = {
   browseInited: boolean;
   /** Spectra preloaded into the in-memory cache (background buffering progress). */
   buffered: number;
+  /** Cache/preload settings (persisted per session; presettable via URL). */
+  settings: Settings;
 };
 
 type Actions = {
@@ -155,6 +206,8 @@ type Actions = {
   stepSpectrum: (dir: 1 | -1) => Promise<void>;
   runXic: (mz: number, tolDa: number) => Promise<void>;
   showTic: () => Promise<void>;
+  /** Update cache/preload settings (persisted; resizes the cache, (re)starts preload). */
+  setSettings: (partial: Partial<Settings>) => void;
 };
 
 const initial: State = {
@@ -183,6 +236,7 @@ const initial: State = {
   storedChromIds: [],
   browseInited: false,
   buffered: 0,
+  settings: initialSettings,
   msLevelFilter: null,
 };
 
@@ -380,6 +434,25 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
     }
   },
+
+  setSettings(partial) {
+    const cur = get().settings;
+    const next: Settings = {
+      preload: partial.preload ?? cur.preload,
+      cacheMB: partial.cacheMB != null ? clampMB(partial.cacheMB) : cur.cacheMB,
+    };
+    saveSettings(next);
+    set({ settings: next });
+    preloadEnabled = next.preload;
+    cacheBudgetBytes = next.cacheMB * 1024 * 1024;
+    evictToBudget(); // a smaller budget drops the oldest cached spectra now
+    set({ buffered: specCache.size });
+    // Turning preload on (with a file open) kicks the background warm-up; turning
+    // it off / shrinking the budget is honoured by the running loop's checks.
+    if (preloadEnabled && reader && get().stage === "ready") {
+      void preloadInBackground(set, get, reader, loadGen);
+    }
+  },
 }));
 
 /** Shared open path for file + URL loads. */
@@ -394,7 +467,8 @@ async function load(
   const gen = ++loadGen;
   scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
   resetSpecCache(); // drop the previous file's cached spectra
-  set({ ...initial, tab: get().tab, stage: "loading", fileName, fileSize, sourceUrl });
+  // Preserve the user's tab + cache settings across loads (don't reset them).
+  set({ ...initial, tab: get().tab, settings: get().settings, stage: "loading", fileName, fileSize, sourceUrl });
   try {
     // Open reads only metadata + parquet footers — never the signal data.
     const opened = await open();
@@ -526,36 +600,41 @@ async function preloadInBackground(
   r: Reader,
   gen: number,
 ): Promise<void> {
-  // Index + TIC first (so Chromatograms is buffered). ensureScan dedupes with the
-  // auto-scan; for large files this triggers the (fast) column scan in the bg.
-  await ensureScan(set, get);
-  if (gen !== loadGen) return;
+  if (!preloadEnabled || preloadRunning) return; // disabled, or already warming
+  preloadRunning = true;
+  try {
+    // Index + TIC first (so Chromatograms is buffered). ensureScan dedupes with
+    // the auto-scan; for large files this triggers the (fast) column scan in bg.
+    await ensureScan(set, get);
+    if (gen !== loadGen || !preloadEnabled) return;
+    if (specCacheBytes >= cacheBudgetBytes) return; // nothing more fits
+    const n = get().summary?.numSpectra ?? 0;
+    if (n === 0) return;
 
-  if (specCacheBytes >= CACHE_BUDGET_BYTES) return; // nothing more fits
-  const n = get().summary?.numSpectra ?? 0;
-  if (n === 0) return;
+    // Visit indices nearest the current selection first, so Prev/Next is instant.
+    const sel = get().selectedIndex ?? 0;
+    const order = Array.from({ length: n }, (_, i) => i).sort(
+      (a, b) => Math.abs(a - sel) - Math.abs(b - sel),
+    );
 
-  // Visit indices nearest the current selection first, so Prev/Next is instant.
-  const sel = get().selectedIndex ?? 0;
-  const order = Array.from({ length: n }, (_, i) => i).sort(
-    (a, b) => Math.abs(a - sel) - Math.abs(b - sel),
-  );
-
-  // Single sequential pass: all reads go through serialRead anyway, and a
-  // user-triggered read interleaves naturally (its cache miss queues one slot).
-  for (const idx of order) {
-    if (gen !== loadGen) return; // superseded by a newer load
-    if (specCacheBytes >= CACHE_BUDGET_BYTES) return; // budget reached
-    if (specCache.has(idx)) continue;
-    try {
-      const s = await serialRead(() => getSpectrumArrays(r, idx));
-      if (gen !== loadGen) return;
-      cacheSpectrum(idx, s);
-      if (gen === loadGen) set({ buffered: specCache.size });
-    } catch {
-      // Skip spectra the reader can't decode — preloading must never error out.
+    // Single sequential pass: all reads go through serialRead anyway, and a
+    // user-triggered read interleaves naturally (its cache miss queues one slot).
+    for (const idx of order) {
+      if (gen !== loadGen || !preloadEnabled) return; // superseded or turned off
+      if (specCacheBytes >= cacheBudgetBytes) return; // budget reached
+      if (specCache.has(idx)) continue;
+      try {
+        const s = await serialRead(() => getSpectrumArrays(r, idx));
+        if (gen !== loadGen) return;
+        cacheSpectrum(idx, s);
+        if (gen === loadGen) set({ buffered: specCache.size });
+      } catch {
+        // Skip spectra the reader can't decode — preloading must never error out.
+      }
+      await new Promise<void>((res) => setTimeout(res, 0)); // yield to the UI
     }
-    await new Promise<void>((res) => setTimeout(res, 0)); // yield to the UI
+  } finally {
+    preloadRunning = false;
   }
 }
 
