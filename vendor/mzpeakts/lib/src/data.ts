@@ -939,7 +939,9 @@ export class ChunkLayoutReader extends BaseLayoutReader {
           const acc = new NumpressArrowAppender();
           decodeLinear(buf.toArray(), buf.length, acc);
           decoded = acc.buildArrow();
-          throw new Error(`Unsupported Numpress Linear: ${encoding}`);
+          // NOTE (mzPeakExplorer patch): the upstream branch decoded the array
+          // above but then threw "Unsupported Numpress Linear", leaving the
+          // decode unused. The decode is complete here, so just use it.
           break;
         case NUMPRESS_SLOF_CURIE:
           throw new Error(
