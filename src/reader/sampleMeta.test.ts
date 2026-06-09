@@ -70,6 +70,20 @@ describe("readStudyMetadata — SDRF blob end-to-end", () => {
     expect(sm!.provenance.hashState).toBe("mismatch");
   });
 
+  it("honors the v0.8 archive_name field + dataset_accession", async () => {
+    const r = fakeReader({
+      metadata: {
+        // v0.8 contract: archive_name in sample_metadata, no metadata.study.accession.
+        sample_metadata: { format: "sdrf", archive_name: member, dataset_accession: "PXD011799" },
+      },
+      members: { [member]: bytes },
+    });
+    const sm = await readStudyMetadata(r, firstFile);
+    expect(sm!.counts.channels).toBe(10);
+    expect(sm!.investigation.accession).toBe("PXD011799");
+    expect(sm!.diagnostics.some((d) => /dataset_accession/.test(d))).toBe(true);
+  });
+
   it("locates the blob by name scan when no member field is given", async () => {
     const r = fakeReader({
       metadata: { sample_metadata: { format: "sdrf" } },

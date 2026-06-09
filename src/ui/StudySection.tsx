@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../state/store";
 import type { Cell, ChannelRole, StudyMetadata, StudyRow } from "../reader/types";
 import { useCvTerms, cvTitle } from "./cvTerms";
+import { olsUrl } from "../reader/curie";
 
 const ROLE_LABEL: Record<ChannelRole, string> = {
   experimental: "Experimental", reference: "Reference", carrier: "Carrier",
@@ -32,9 +33,51 @@ function CvCell({ cell }: { cell: Cell | null }) {
     return <span className="chip" title="SDRF reserved value" style={{ opacity: 0.6 }}>{cell.reserved}</span>;
   }
   const text = cell.value ?? "—";
-  const def = cell.cv ? cvTitle(cv, cell.cv.id) : undefined;
-  const title = def ?? cell.cv?.id ?? undefined;
-  return <span title={title} style={cell.cv ? { cursor: "help" } : undefined}>{text}</span>;
+  if (!cell.cv) return <>{text}</>;
+  const def = cvTitle(cv, cell.cv.id);
+  if (def) return <span title={def} style={{ cursor: "help" }}>{text}</span>;
+  // Accession not in the bundled CV map (NCBITaxon/EFO/Unimod/…): link out to OLS
+  // so the term stays resolvable rather than showing a dead tooltip (spec §8.1).
+  return (
+    <a
+      href={olsUrl(cell.cv)} target="_blank" rel="noopener noreferrer" title={`${cell.cv.id} · look up in OLS`}
+      style={{ color: "inherit", textDecoration: "none", borderBottom: "1px dotted var(--text-muted)" }}
+    >{text}</a>
+  );
+}
+
+/** Deferred long-tail: the full characteristics × sample matrix, behind an expander. */
+function AllCharacteristics({ rows }: { rows: StudyRow[] }) {
+  const charKeys = [...new Set(rows.flatMap((r) => Object.keys(r.characteristics)))];
+  const factorKeys = [...new Set(rows.flatMap((r) => Object.keys(r.factors)))];
+  if (charKeys.length === 0 && factorKeys.length === 0) return null;
+  return (
+    <details style={{ marginTop: "0.5rem" }}>
+      <summary className="hint" style={{ cursor: "pointer" }}>
+        All characteristics &amp; factors ({charKeys.length + factorKeys.length} columns × {rows.length} rows)
+      </summary>
+      <div style={{ overflowX: "auto", marginTop: "0.3rem" }}>
+        <table className="data">
+          <thead>
+            <tr>
+              <th>Sample</th>
+              {charKeys.map((k) => <th key={k}>{k}</th>)}
+              {factorKeys.map((k) => <th key={`f:${k}`}>factor: {k}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={`${r.sourceName}:${r.label ?? ""}:${i}`}>
+                <td>{r.sourceName}{r.label ? <span className="hint"> · {r.label}</span> : null}</td>
+                {charKeys.map((k) => <td key={k}><CvCell cell={r.characteristics[k] ?? null} /></td>)}
+                {factorKeys.map((k) => <td key={`f:${k}`}><CvCell cell={r.factors[k] ?? null} /></td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
 }
 
 function RoleBadge({ role }: { role: ChannelRole }) {
@@ -204,6 +247,9 @@ export function StudySection() {
       {display.length > 0 && (
         isobaric ? <ChannelTable rows={display} /> : <SampleTable rows={display} />
       )}
+
+      {/* Deferred long-tail (full characteristics matrix) behind an expander */}
+      {display.length > 0 && <AllCharacteristics rows={display} />}
 
       {/* Provenance + raw access */}
       <p className="hint" style={{ marginTop: "0.5rem" }}>

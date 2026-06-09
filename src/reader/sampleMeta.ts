@@ -58,8 +58,10 @@ export async function readStudyMetadata(
   const names = memberNames(reader);
 
   // Locate the blob member: explicit field wins; else scan for sample_metadata/.
+  // v0.8 contract (mzpeak-extension-contract §3.9) names this `archive_name`;
+  // tolerate the older member/archive_path/path spellings too.
   const explicit =
-    str(prov?.member) ?? str(prov?.archive_path) ?? str(prov?.path);
+    str(prov?.archive_name) ?? str(prov?.member) ?? str(prov?.archive_path) ?? str(prov?.path);
   const scanned = names.find((n) => n.toLowerCase().includes("sample_metadata/")) ?? null;
   const member = explicit ?? scanned;
 
@@ -96,7 +98,7 @@ export async function readStudyMetadata(
       const bundle = await readIsaBundle(reader, member, names);
       provenance.hashState = await verify(bundle.hashBytes, sha);
       const sm = parseIsaTab(bundle.tab, fileName, provenance);
-      return reconcile(sm, study, diagnostics);
+      return reconcile(sm, study, prov, diagnostics);
     }
     const blob = await readArchiveMember(reader, member);
     if (!blob) {
@@ -108,7 +110,7 @@ export async function readStudyMetadata(
       format === "isa-json"
         ? parseIsaJson(safeJson(blob.text), fileName, provenance)
         : parseSdrf(blob.text, fileName, provenance);
-    return reconcile(sm, study, diagnostics);
+    return reconcile(sm, study, prov, diagnostics);
   } catch (err) {
     diagnostics.push(`Failed to read study metadata: ${err instanceof Error ? err.message : String(err)}`);
     return keysOnly(study, prov, member, diagnostics);
@@ -162,12 +164,16 @@ async function readIsaBundle(
 function reconcile(
   sm: StudyMetadata,
   study: Record<string, unknown> | null,
+  prov: Record<string, unknown> | null,
   extraDiagnostics: string[],
 ): StudyMetadata {
-  const accession = str(study?.accession) ?? str(study?.dataset_accession);
+  // v0.8 uses `accession` in metadata.study and `dataset_accession` in
+  // metadata.sample_metadata (an inter-block inconsistency); accept both.
+  const accession =
+    str(study?.accession) ?? str(study?.dataset_accession) ?? str(prov?.dataset_accession);
   const title = str(study?.title);
-  if (study?.dataset_accession && !study?.accession) {
-    extraDiagnostics.push('Index uses legacy "dataset_accession"; prefer "accession".');
+  if ((study?.dataset_accession || prov?.dataset_accession) && !study?.accession) {
+    extraDiagnostics.push('Index uses "dataset_accession"; prefer metadata.study.accession.');
   }
   return {
     ...sm,

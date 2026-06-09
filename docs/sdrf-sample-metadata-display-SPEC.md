@@ -62,9 +62,11 @@ glance — not every SDRF column. Curated subset:
 ## 2. Inputs & retrieval
 
 ### 2.1 The blob (authoritative)
-- Located by name from `metadata.sample_metadata` (the producer records the archive member;
-  **require an explicit member/`archive_path` field**, scan `fileIndex.files[]` for a
-  `sample_metadata/` prefix only as a diagnostic fallback — review §A-12).
+- Located by name from `metadata.sample_metadata`. **v0.8 FINAL** (mzpeak-extension-contract §3.9):
+  the explicit field is **`archive_name`** (e.g. `"sample_metadata/sdrf.tsv"`); the reader reads it
+  directly and **never dispatches on `data_kind`/`entity_type`** (open-enum, collapses to `Other`).
+  Implemented to accept `archive_name` first, then the older `member`/`archive_path`/`path`
+  spellings, then a `sample_metadata/`-prefix scan as a diagnostic fallback (review §A-12).
 - Read the **raw member bytes** via a new bounded reader API (§7.1) — `archive.ts` today only reads
   parquet footers, so this is **new plumbing** (correcting v1's "no new plumbing" claim — review §A-13).
 - **Verify** the member bytes' SHA-256 against `metadata.sample_metadata.sha256`; show
