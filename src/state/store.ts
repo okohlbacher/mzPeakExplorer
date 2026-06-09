@@ -813,6 +813,15 @@ export function getArchiveListing(): ArchiveListing | null {
   return reader ? listArchive(reader) : null;
 }
 
+/** Read an attached member's raw bytes for open/download (Structure tab).
+ *  Capped at 256 MB — generous for embedded images / SDRF / ISA / Other members
+ *  (the big parquet data tables aren't offered for download). */
+export async function getArchiveMemberBytes(path: string): Promise<Uint8Array | null> {
+  if (!reader) return null;
+  const m = await readArchiveMember(reader, path, 256 * 1024 * 1024);
+  return m?.bytes ?? null;
+}
+
 /** Parquet footer structure for one archive member (Structure tab, lazy). */
 export async function getParquetInfo(filename: string): Promise<ParquetInfo | null> {
   if (!reader) return null;

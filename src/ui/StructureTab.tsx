@@ -1,20 +1,25 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ChevronRight,
   Database,
+  Download,
+  ExternalLink,
   FileText,
   Folder,
+  Image as ImageIcon,
   Table2,
 } from "lucide-react";
 import { Button } from "./components";
 import {
   getArchiveListing,
+  getArchiveMemberBytes,
   getDeepColumn,
   getParquetInfo,
   sampleColumn,
 } from "../state/store";
 import type {
   ArchiveEntry,
+  ArchiveKind,
   ArchiveListing,
   DeepColumn,
   ParquetColumn,
@@ -368,34 +373,83 @@ function Histogram({
   );
 }
 
+const KIND_LABEL: Record<ArchiveKind, string> = {
+  parquet: "parquet",
+  image: "image",
+  "sample-metadata": "SDRF / ISA",
+  index: "index",
+  other: "other",
+};
+
+function mimeFor(path: string): string {
+  const p = path.toLowerCase();
+  if (p.endsWith(".json")) return "application/json";
+  if (p.endsWith(".tsv")) return "text/tab-separated-values";
+  if (p.endsWith(".txt") || p.endsWith(".csv")) return "text/plain";
+  if (/\.tiff?$/.test(p)) return "image/tiff";
+  if (p.endsWith(".png")) return "image/png";
+  if (/\.jpe?g$/.test(p)) return "image/jpeg";
+  return "application/octet-stream";
+}
+
+/** Open (preview in a new tab) or download an attached ZIP member. */
+async function openMember(path: string, download: boolean): Promise<void> {
+  const bytes = await getArchiveMemberBytes(path);
+  if (!bytes) return;
+  // Copy into a fresh ArrayBuffer-backed view (satisfies BlobPart typing).
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mimeFor(path) }));
+  if (download) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = path.split("/").pop() || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 function EntryRow({ entry, maxSize }: { entry: ArchiveEntry; maxSize: number }) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const expandable = entry.isParquet;
+  // Attached, non-tabular members (images, SDRF/ISA, index, other "Other"
+  // members) can be opened/downloaded — the parquet data tables cannot (too big).
+  const attachment = !entry.isDirectory && !entry.isParquet;
   const frac = maxSize > 0 ? entry.uncompressedSize / maxSize : 0;
   const icon = entry.isDirectory ? (
     <Folder size={15} />
+  ) : entry.kind === "image" ? (
+    <ImageIcon size={15} />
   ) : entry.isParquet ? (
     <Table2 size={15} />
   ) : (
     <FileText size={15} />
   );
 
+  const act = async (download: boolean) => {
+    setBusy(true);
+    try {
+      await openMember(entry.path, download);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div style={{ borderBottom: "1px solid var(--border-default)" }}>
-      <button
-        type="button"
+      <div
+        role={expandable ? "button" : undefined}
         onClick={() => expandable && setOpen((o) => !o)}
         style={{
           display: "grid",
-          gridTemplateColumns: "1.1rem 1.1rem minmax(0,1fr) 120px 6.5rem 6.5rem",
+          gridTemplateColumns: "1.1rem 1.1rem minmax(0,1fr) 120px 6.5rem 6.5rem 6rem",
           alignItems: "center",
           gap: "0.6rem",
           width: "100%",
           padding: "0.45rem 0.4rem",
-          border: "none",
-          background: "transparent",
-          textAlign: "left",
-          font: "inherit",
           cursor: expandable ? "pointer" : "default",
         }}
       >
@@ -409,17 +463,24 @@ function EntryRow({ entry, maxSize }: { entry: ArchiveEntry; maxSize: number }) 
           }}
         />
         <span style={{ display: "inline-flex", color: "var(--text-muted)" }}>{icon}</span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--text-data)",
-            color: "var(--text-body)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {entry.path}
+        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--text-data)",
+              color: "var(--text-body)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.path}
+          </span>
+          {!entry.isDirectory && entry.kind !== "parquet" && (
+            <span className="chip" style={{ flexShrink: 0, fontSize: "var(--text-xs)" }}>
+              {KIND_LABEL[entry.kind]}
+            </span>
+          )}
         </span>
         {entry.isDirectory ? <span /> : <Bar frac={frac} />}
         <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-sm)" }}>
@@ -428,11 +489,47 @@ function EntryRow({ entry, maxSize }: { entry: ArchiveEntry; maxSize: number }) 
         <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
           {entry.isDirectory ? "—" : fmtBytes(entry.compressedSize)}
         </span>
-      </button>
+        <span style={{ display: "flex", justifyContent: "flex-end", gap: "0.35rem" }}>
+          {attachment && (
+            <>
+              <button
+                type="button"
+                title="Open in a new tab"
+                disabled={busy}
+                onClick={(e) => { e.stopPropagation(); void act(false); }}
+                style={iconBtn}
+              >
+                <ExternalLink size={14} />
+              </button>
+              <button
+                type="button"
+                title="Download"
+                disabled={busy}
+                onClick={(e) => { e.stopPropagation(); void act(true); }}
+                style={iconBtn}
+              >
+                <Download size={14} />
+              </button>
+            </>
+          )}
+        </span>
+      </div>
       {open && expandable && <ParquetDetail filename={entry.path} />}
     </div>
   );
 }
+
+const iconBtn: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0.2rem",
+  border: "1px solid var(--border-default)",
+  borderRadius: "var(--radius-sm)",
+  background: "var(--surface-card)",
+  color: "var(--text-secondary)",
+  cursor: "pointer",
+};
 
 /** The Structure view: navigate the .mzpeak ZIP and inspect parquet internals. */
 export function StructureTab() {
@@ -468,7 +565,7 @@ export function StructureTab() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1.1rem 1.1rem minmax(0,1fr) 120px 6.5rem 6.5rem",
+          gridTemplateColumns: "1.1rem 1.1rem minmax(0,1fr) 120px 6.5rem 6.5rem 6rem",
           alignItems: "center",
           gap: "0.6rem",
           padding: "0 0.4rem 0.35rem",
@@ -482,6 +579,7 @@ export function StructureTab() {
         <span /> <span /> <span>Name</span> <span>Rel. size</span>
         <span style={{ textAlign: "right" }}>Raw</span>
         <span style={{ textAlign: "right" }}>Stored</span>
+        <span style={{ textAlign: "right" }}>Open</span>
       </div>
       <div>
         {files.map((e) => (
@@ -490,7 +588,10 @@ export function StructureTab() {
       </div>
       <p className="hint" style={{ marginTop: "0.7rem" }}>
         Expand a <strong>parquet</strong> file to see its columns, row/row-group
-        counts, and each column's share of the stored bytes.
+        counts, and each column's share of the stored bytes. Attached members —
+        embedded <strong>images</strong>, <strong>SDRF / ISA</strong> sample
+        metadata, and any other non-data files — can be opened in a new tab or
+        downloaded.
       </p>
     </div>
   );

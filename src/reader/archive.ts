@@ -5,11 +5,25 @@
 import { tableFromIPC } from "apache-arrow";
 import type { Reader } from "./open";
 import type {
+  ArchiveKind,
   ArchiveListing,
   ArchiveEntry,
   ParquetColumn,
   ParquetInfo,
 } from "./types";
+
+const IMAGE_EXT = /\.(tiff?|png|jpe?g|gif|bmp|webp)$/i;
+
+/** Classify a ZIP member by path: data tables vs attached images / sample
+ *  metadata (SDRF/ISA) / the index / any other embedded "Other" member. */
+export function classifyArchiveKind(path: string): ArchiveKind {
+  const p = path.toLowerCase();
+  if (p.endsWith(".parquet")) return "parquet";
+  if (p.startsWith("images/") || IMAGE_EXT.test(p)) return "image";
+  if (p.startsWith("sample_metadata/") || p.endsWith(".sdrf.tsv")) return "sample-metadata";
+  if (p.endsWith("mzpeak_index.json")) return "index";
+  return "other";
+}
 
 type RawZipEntry = {
   filename?: unknown;
@@ -38,12 +52,14 @@ export function listArchive(reader: Reader): ArchiveListing {
     .filter((e) => e && typeof e.filename === "string")
     .map((e) => {
       const path = String(e.filename);
+      const isDirectory = e.directory === true || path.endsWith("/");
       return {
         path,
         compressedSize: num(e.compressedSize),
         uncompressedSize: num(e.uncompressedSize),
-        isDirectory: e.directory === true || path.endsWith("/"),
+        isDirectory,
         isParquet: path.toLowerCase().endsWith(".parquet"),
+        kind: classifyArchiveKind(path),
       };
     })
     .sort((a, b) => a.path.localeCompare(b.path));

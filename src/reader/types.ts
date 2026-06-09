@@ -12,12 +12,17 @@ export type ManifestEntry = {
 };
 
 /** One member of the `.mzpeak` ZIP archive (Structure tab). */
+/** Coarse classification of a ZIP member for the Structure tab. */
+export type ArchiveKind = "parquet" | "image" | "sample-metadata" | "index" | "other";
+
 export type ArchiveEntry = {
   path: string;
   compressedSize: number;
   uncompressedSize: number;
   isDirectory: boolean;
   isParquet: boolean;
+  /** What this member is (drives the kind label + open/download affordances). */
+  kind: ArchiveKind;
 };
 
 /** The ZIP listing plus its rolled-up totals. */
