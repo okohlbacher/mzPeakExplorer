@@ -78,6 +78,20 @@ describe("parseSdrf — PXD020187 (label-free)", () => {
   });
 });
 
+describe("parseSdrf — file matching across extensions", () => {
+  const header = "source name\tcharacteristics[organism]\tcomment[label]\tcomment[data file]";
+  const text = [header, "s1\tHomo sapiens\tlabel free sample\tRun_42_fr8.raw"].join("\n");
+  it("matches a .mzpeak open-file name against the SDRF .raw stem", () => {
+    // The open file is the .mzpeak; the SDRF names the .raw — both strip to "run_42_fr8".
+    const sm = parseSdrf(text, "Run_42_fr8.mzpeak", prov(null));
+    expect(sm.rows[0].matchesThisFile).toBe(true);
+  });
+  it("does not match a different stem", () => {
+    const sm = parseSdrf(text, "Run_99_fr1.mzpeak", prov(null));
+    expect(sm.rows[0].matchesThisFile).toBe(false);
+  });
+});
+
 describe("parseSdrf — adversarial", () => {
   const header =
     "source name\tcharacteristics[organism]\tcomment[label]\tcomment[modification parameters]\tcomment[data file]\tfactor value[treatment]";

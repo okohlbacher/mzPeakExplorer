@@ -8,7 +8,9 @@ import { classifyLabel, nominalPlex } from "./reagents";
 
 const RESERVED = ["not available", "not applicable", "anonymized", "pooled"] as const;
 const KNOWN_EXTS = [
-  ".wiff.scan", ".wiff2", ".wiff", ".raw", ".d", ".mzml", ".mzxml", ".mgf", ".dia",
+  // `.mzpeak` first: the OPEN file is a .mzpeak, the SDRF names the .raw/.mzML —
+  // both must strip to the shared stem to match (e.g. "...fr8.mzpeak" ↔ "...fr8.raw").
+  ".mzpeak", ".wiff.scan", ".wiff2", ".wiff", ".raw", ".d", ".mzml", ".imzml", ".mzxml", ".mgf", ".dia",
 ];
 
 /** Parse one SDRF/ISA cell value into a typed {@link Cell}. */
