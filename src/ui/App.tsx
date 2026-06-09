@@ -85,6 +85,8 @@ export function App() {
   const numSpectra = useStore((s) => s.summary?.numSpectra);
   const openFile = useStore((s) => s.openFile);
   const openUrl = useStore((s) => s.openUrl);
+  const selectByScanNumber = useStore((s) => s.selectByScanNumber);
+  const showStoredChromatogram = useStore((s) => s.showStoredChromatogram);
 
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
@@ -98,14 +100,35 @@ export function App() {
   // Deep link: ?file=<url> (alias ?url=) auto-opens an external mzPeak on load,
   // so links like .../mzPeakExplorer/?file=https://host/x.mzpeak start the viewer
   // directly on that file. The remote host must allow CORS + range requests.
+  //
+  // Optional landing target on the same link:
+  //   ?scan=<native scan number>  → open the Spectra view on that spectrum
+  //   ?chrom=<index|id>           → open the Chromatograms view on that stored chromatogram
+  // A miss (no such scan/chromatogram) lands on the overview with an error banner.
   const deepLinkDone = useRef(false);
+  const pendingTarget = useRef<{ scan: string | null; chrom: string | null } | null>(null);
   useEffect(() => {
     if (deepLinkDone.current) return;
     deepLinkDone.current = true;
     const p = new URLSearchParams(window.location.search);
     const fileUrl = p.get("file") ?? p.get("url");
+    const scan = p.get("scan");
+    const chrom = p.get("chrom");
+    if (scan != null || chrom != null) pendingTarget.current = { scan, chrom };
     if (fileUrl && /^https?:\/\//i.test(fileUrl)) void openUrl(fileUrl);
   }, [openUrl]);
+
+  // Once the deep-linked file is open, jump to the requested scan / chromatogram.
+  // Runs once; ?scan= wins if both are present.
+  const targetApplied = useRef(false);
+  useEffect(() => {
+    if (targetApplied.current || stage !== "ready") return;
+    const t = pendingTarget.current;
+    if (!t) return;
+    targetApplied.current = true;
+    if (t.scan != null) void selectByScanNumber(Number(t.scan));
+    else if (t.chrom != null) void showStoredChromatogram(t.chrom);
+  }, [stage, selectByScanNumber, showStoredChromatogram]);
 
   const [copied, setCopied] = useState(false);
   function copyDeepLink() {

@@ -23,6 +23,7 @@ export function ChromatogramsTab() {
   const chromMode = useStore((s) => s.chromMode);
   const chromLoading = useStore((s) => s.chromLoading);
   const xicParams = useStore((s) => s.xicParams);
+  const chromStoredId = useStore((s) => s.chromStoredId);
   const runXic = useStore((s) => s.runXic);
   const showTic = useStore((s) => s.showTic);
 
@@ -37,9 +38,11 @@ export function ChromatogramsTab() {
   const selTime = selectedSpectrum?.time ?? selRow?.time ?? null;
 
   const chromTitle =
-    chromMode === "xic" && xicParams
-      ? `XIC — m/z ${xicParams.mz} ± ${xicParams.tolDa}`
-      : "Total ion chromatogram (MS1)";
+    chromMode === "stored"
+      ? `Chromatogram — ${chromStoredId ?? "stored"}`
+      : chromMode === "xic" && xicParams
+        ? `XIC — m/z ${xicParams.mz} ± ${xicParams.tolDa}`
+        : "Total ion chromatogram (MS1)";
 
   function submitXic() {
     const m = Number(mz);
@@ -76,9 +79,9 @@ export function ChromatogramsTab() {
           <Button size="sm" variant="primary" disabled={!mz} onClick={submitXic}>
             Extract
           </Button>
-          {(chromMode === "xic" || !chrom) && (
+          {(chromMode !== "tic" || !chrom) && (
             <Button size="sm" disabled={chromLoading} onClick={() => void showTic()}>
-              {chromMode === "xic" ? "Show TIC" : "Build TIC"}
+              {chromMode === "tic" ? "Build TIC" : "Show TIC"}
             </Button>
           )}
         </div>

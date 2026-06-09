@@ -143,7 +143,7 @@ function cacheSpectrum(index: number, s: SpectrumArrays): void {
 }
 
 export type Tab = "summary" | "metadata" | "spectra" | "chromatograms" | "structure";
-export type ChromMode = "tic" | "xic";
+export type ChromMode = "tic" | "xic" | "stored";
 
 type XicParams = { mz: number; tolDa: number };
 
@@ -182,6 +182,8 @@ type State = {
   chrom: ChromPoint[] | null;
   chromLoading: boolean;
   xicParams: XicParams | null;
+  /** Id of the stored chromatogram on screen when chromMode === "stored". */
+  chromStoredId: string | null;
   storedChromIds: { index: number; id: string }[];
   /** True once the Browse tab has lazily loaded its first spectrum + cheap TIC. */
   browseInited: boolean;
@@ -206,6 +208,10 @@ type Actions = {
   stepSpectrum: (dir: 1 | -1) => Promise<void>;
   runXic: (mz: number, tolDa: number) => Promise<void>;
   showTic: () => Promise<void>;
+  /** Show a stored chromatogram (e.g. the TIC) by index or id; used by ?chrom= deep links. */
+  showStoredChromatogram: (idOrIndex: string) => Promise<boolean>;
+  /** Jump to the spectrum with this native scan number (from its id); used by ?scan= deep links. */
+  selectByScanNumber: (scan: number) => Promise<boolean>;
   /** Update cache/preload settings (persisted; resizes the cache, (re)starts preload). */
   setSettings: (partial: Partial<Settings>) => void;
 };
@@ -233,6 +239,7 @@ const initial: State = {
   chrom: null,
   chromLoading: false,
   xicParams: null,
+  chromStoredId: null,
   storedChromIds: [],
   browseInited: false,
   buffered: 0,
@@ -243,6 +250,16 @@ const initial: State = {
 function describeError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+/**
+ * Native scan number embedded in a spectrum id (e.g.
+ * `controllerType=0 controllerNumber=1 scan=229` → 229), or null when the id
+ * carries no `scan=<digits>` token. Used to resolve `?scan=` deep links.
+ */
+function parseScanNumber(id: string): number | null {
+  const m = /(?:^|[\s;])scan=(\d+)\b/i.exec(id);
+  return m ? Number(m[1]) : null;
 }
 
 export const useStore = create<State & Actions>((set, get) => ({
@@ -433,6 +450,77 @@ export const useStore = create<State & Actions>((set, get) => ({
         set({ chromLoading: false, error: `Could not build the chromatogram: ${describeError(err)}` });
       }
     }
+  },
+
+  async showStoredChromatogram(idOrIndex) {
+    const r = reader;
+    if (!r) return false;
+    const ids = get().storedChromIds;
+    if (ids.length === 0) {
+      set({ tab: "chromatograms", error: "This file has no stored chromatograms." });
+      return false;
+    }
+    const key = String(idOrIndex).trim();
+    // Numeric → stored-chromatogram index; otherwise match the id (case-insensitive).
+    let match = /^\d+$/.test(key) ? ids.find((c) => c.index === Number(key)) : undefined;
+    if (!match) {
+      const lk = key.toLowerCase();
+      match = ids.find((c) => c.id.trim().toLowerCase() === lk);
+    }
+    if (!match) {
+      set({ tab: "summary", error: `No chromatogram "${idOrIndex}" in this file.` });
+      return false;
+    }
+    const gen = loadGen;
+    set({
+      tab: "chromatograms",
+      chromMode: "stored",
+      chromStoredId: match.id,
+      xicParams: null,
+      chromLoading: true,
+      error: null,
+    });
+    try {
+      const sc = await loadStoredChromatogram(match.index);
+      if (gen !== loadGen) return false;
+      if (!sc) {
+        set({ tab: "summary", chromMode: "tic", chromLoading: false, error: `Chromatogram "${match.id}" has no data arrays.` });
+        return false;
+      }
+      const pts: ChromPoint[] = new Array(sc.time.length);
+      for (let i = 0; i < sc.time.length; i++) {
+        pts[i] = { time: sc.time[i], index: i, intensity: sc.intensity[i] };
+      }
+      set({ chrom: pts, chromLoading: false });
+      return true;
+    } catch (err) {
+      if (gen === loadGen) {
+        set({ tab: "summary", chromMode: "tic", chromLoading: false, error: `Could not read chromatogram "${match.id}": ${describeError(err)}` });
+      }
+      return false;
+    }
+  },
+
+  async selectByScanNumber(scan) {
+    const r = reader;
+    if (!r) return false;
+    if (!Number.isFinite(scan)) {
+      set({ tab: "summary", error: "The link's scan number is not a valid number." });
+      return false;
+    }
+    const gen = loadGen;
+    // Resolving a native scan number means reading every spectrum id, which is
+    // exactly the per-spectrum scan. Run it on demand if it hasn't already.
+    if (!get().scanned) await get().computeBreakdown();
+    if (gen !== loadGen) return false;
+    const row = get().spectra.find((s) => parseScanNumber(s.id) === scan);
+    if (!row) {
+      set({ tab: "summary", error: `No spectrum with scan number ${scan} in this file.` });
+      return false;
+    }
+    set({ tab: "spectra", error: null });
+    await get().selectSpectrum(row.index);
+    return true;
   },
 
   setSettings(partial) {
