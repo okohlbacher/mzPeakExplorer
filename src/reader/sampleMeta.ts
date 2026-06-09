@@ -3,10 +3,26 @@
 // reconcile with the index.json projected keys. Mirrors readImaging's defensive
 // posture; returns null when the file carries no study metadata (presence gate).
 import type { Reader } from "./open";
-import type { HashState, StudyMetadata, StudyProvenance } from "./types";
+import type {
+  ChannelAssignment, HashState, StudyLabeling, StudyMetadata, StudyProvenance,
+} from "./types";
 import { readArchiveMember } from "./archive";
 import { parseSdrf } from "./sdrf";
 import { parseIsaTab, parseIsaJson, type IsaTabBundle } from "./isa";
+import { classifyLabel, nominalPlex } from "./reagents";
+import { parseCurie } from "./curie";
+
+function numOf(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim()) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+function hasText(v: unknown, sub: string): boolean {
+  return String(v ?? "").toLowerCase().includes(sub);
+}
 
 function obj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -55,33 +71,35 @@ export async function readStudyMetadata(
     .store?.fileIndex?.metadata);
   const prov = obj(meta?.sample_metadata);
   const study = obj(meta?.study);
+  const sampleList: unknown[] = Array.isArray(meta?.sample_list) ? (meta!.sample_list as unknown[]) : [];
   const names = memberNames(reader);
 
-  // Locate the blob member: explicit field wins; else scan for sample_metadata/.
-  // v0.8 contract (mzpeak-extension-contract §3.9) names this `archive_name`;
-  // tolerate the older member/archive_path/path spellings too.
+  // Locate the blob member (the lossless anchor, for hash verify + raw view):
+  // archive_name (v0.8 §3.9), then study.sample_metadata_ref, then legacy spellings,
+  // then a name scan.
   const explicit =
-    str(prov?.archive_name) ?? str(prov?.member) ?? str(prov?.archive_path) ?? str(prov?.path);
+    str(prov?.archive_name) ?? str(study?.sample_metadata_ref) ??
+    str(prov?.member) ?? str(prov?.archive_path) ?? str(prov?.path);
   const scanned = names.find((n) => n.toLowerCase().includes("sample_metadata/")) ?? null;
   const member = explicit ?? scanned;
 
-  // Presence gate (review §A-3): need a blob member OR a sample_metadata block.
-  if (!member && !prov) return null;
+  // Projection = the ENCODED sample_list (labeled channels) + run_sample_binding.
+  // This is the authoritative, run-scoped source we drive the summary from (the
+  // blob is only re-served verbatim, never re-parsed for the summary). A thin
+  // study block (accession/title only) is NOT a projection — fall to the blob,
+  // which yields channels + biology + factors.
+  const hasProjection = sampleList.length > 0 || obj(study?.run_sample_binding) != null;
+
+  // Presence gate: a projection, a blob member, a sample_metadata block, or study.
+  if (!hasProjection && !member && !prov && !study) return null;
 
   const diagnostics: string[] = [];
   if (!explicit && scanned) {
     diagnostics.push(`Blob member located by name scan ("${scanned}"); no explicit member field.`);
   }
 
-  const formatHint = str(prov?.format);
-  const format = detectFormat(member, formatHint);
-  if (!member || !format) {
-    diagnostics.push("Study metadata block present but no readable blob member was found.");
-    // Fall back to a keys-only banner so the section still shows what little we have.
-    return keysOnly(study, prov, member, diagnostics);
-  }
-
-  // Provenance + hash verification.
+  const formatHint = str(prov?.format) ?? str(study?.format);
+  const format = detectFormat(member, formatHint) ?? "sdrf";
   const sha = str(prov?.sha256);
   const provenance: StudyProvenance = {
     format,
@@ -92,6 +110,24 @@ export async function readStudyMetadata(
     hashState: "none",
     member,
   };
+
+  // ── Projection-first ───────────────────────────────────────────────────────
+  if (hasProjection) {
+    // Verify the embedded blob's hash (best-effort; the member is small).
+    if (member && sha) {
+      try {
+        const blob = await readArchiveMember(reader, member);
+        provenance.hashState = await verify(blob?.bytes ?? null, sha);
+      } catch { /* leave "none" */ }
+    }
+    return buildProjection(study, sampleList, format, provenance, diagnostics);
+  }
+
+  // ── Blob fallback (verbatim-only files: parse + file-match filter) ──────────
+  if (!member) {
+    diagnostics.push("Study metadata block present but no readable blob member was found.");
+    return keysOnly(study, prov, member, diagnostics);
+  }
 
   try {
     if (format === "isa-tab") {
@@ -115,6 +151,86 @@ export async function readStudyMetadata(
     diagnostics.push(`Failed to read study metadata: ${err instanceof Error ? err.message : String(err)}`);
     return keysOnly(study, prov, member, diagnostics);
   }
+}
+
+/** Build the run-scoped study summary from the ENCODED projection: join
+ *  sample_list (the labeled channels) on run_sample_binding (this run's samples). */
+function buildProjection(
+  study: Record<string, unknown> | null,
+  sampleList: unknown[],
+  format: StudyMetadata["format"],
+  provenance: StudyProvenance,
+  diagnostics: string[],
+): StudyMetadata {
+  const rsb = obj(study?.run_sample_binding);
+  const boundIds = new Set(
+    (Array.isArray(rsb?.sample_ids) ? (rsb!.sample_ids as unknown[]) : []).map((x) => String(x)),
+  );
+  const runId = str(rsb?.run_id);
+  const hasBinding = boundIds.size > 0;
+
+  const channels: ChannelAssignment[] = [];
+  for (const raw of sampleList) {
+    const e = obj(raw);
+    if (!e) continue;
+    const params = Array.isArray(e.parameters) ? (e.parameters as unknown[]) : [];
+    const find = (pred: (p: Record<string, unknown>) => boolean) => {
+      for (const p of params) {
+        const po = obj(p);
+        if (po && pred(po)) return po;
+      }
+      return null;
+    };
+    // Only labeled (isobaric) sample_list entries are channels (carry MS:1002602).
+    const labelP = find((p) => String(p.accession).toUpperCase() === "MS:1002602");
+    if (!labelP) continue;
+    const mzP = find((p) => hasText(p.accession, "reporter") || hasText(p.name, "reporter"));
+    const roleP = find((p) => hasText(p.accession, "role") || hasText(p.name, "role"));
+    const tagP = find((p) => String(p.accession).toUpperCase().startsWith("UNIMOD:"));
+    const id = str(e.id);
+    channels.push({
+      channelLabel: str(labelP.value) ?? str(labelP.name),
+      reporterMz: numOf(mzP?.value),
+      role: str(roleP?.value),
+      tag: tagP ? parseCurie(str(tagP.accession), str(tagP.value) ?? str(tagP.name)) : null,
+      sampleId: id,
+      sampleName: str(e.name),
+      boundToThisRun: hasBinding ? id != null && boundIds.has(id) : true,
+    });
+  }
+
+  if (!hasBinding && channels.length > 0) {
+    diagnostics.push("No run_sample_binding in the index; showing all study channels (study-wide).");
+  }
+
+  const bound = channels.filter((c) => c.boundToThisRun);
+  const firstLabel = bound[0]?.channelLabel ?? channels[0]?.channelLabel ?? null;
+  const { kind, reagent } = classifyLabel(firstLabel);
+  const labeling: StudyLabeling = { kind, reagent, plex: nominalPlex(reagent, bound.length) };
+
+  return {
+    format,
+    source: "projection",
+    investigation: {
+      accession: str(study?.accession) ?? str(study?.dataset_accession),
+      title: str(study?.title),
+      description: null, contacts: [], publications: [], protocols: [],
+    },
+    channels,
+    runId,
+    rows: [],
+    factors: [],
+    labeling,
+    counts: {
+      sourceSamples: sampleList.length,
+      channels: bound.length,
+      dataFiles: 1,
+      rows: channels.length,
+    },
+    biology: { organisms: [], tissues: [], diseases: [], cellTypes: [] },
+    provenance,
+    diagnostics,
+  };
 }
 
 async function verify(bytes: Uint8Array | null, declared: string | null): Promise<HashState> {
@@ -199,7 +315,10 @@ function keysOnly(
   const fmt = (str(prov?.format) as StudyMetadata["format"]) ?? "sdrf";
   return {
     format: fmt,
+    source: "projection",
     investigation: { accession, title, description: null, contacts: [], publications: [], protocols: [] },
+    channels: [],
+    runId: null,
     rows: [],
     factors: [],
     labeling: { kind: "label-free", reagent: null, plex: null },

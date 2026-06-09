@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../state/store";
-import type { Cell, ChannelRole, StudyMetadata, StudyRow } from "../reader/types";
+import type { Cell, ChannelAssignment, ChannelRole, StudyMetadata, StudyRow } from "../reader/types";
 import { useCvTerms, cvTitle } from "./cvTerms";
 import { olsUrl } from "../reader/curie";
 
@@ -164,6 +164,69 @@ function SampleTable({ rows }: { rows: StudyRow[] }) {
   );
 }
 
+/** Role badge for the producer's channel-role vocabulary (sample | pooled |
+ *  reference | carrier | normalization | empty). Non-"sample" roles are emphasised. */
+function ProjRoleBadge({ role }: { role: string | null }) {
+  const r = (role ?? "").toLowerCase();
+  if (!r || r === "sample" || r === "experimental") return <>{role ?? "—"}</>;
+  return (
+    <span className="chip" style={{ background: "var(--accent-soft)", color: "var(--accent-active)" }}>
+      {role}
+    </span>
+  );
+}
+
+/** The dedicated, run-scoped Channel Assignments view — read from the ENCODED
+ *  projection (sample_list ⋈ run_sample_binding), the authoritative per-run map. */
+function ChannelAssignments({ channels, runId }: { channels: ChannelAssignment[]; runId: string | null }) {
+  const cv = useCvTerms();
+  const bound = channels
+    .filter((c) => c.boundToThisRun)
+    .sort((a, b) => (a.reporterMz ?? 0) - (b.reporterMz ?? 0));
+  if (bound.length === 0) {
+    return <p className="hint">No isobaric channels are bound to this run.</p>;
+  }
+  return (
+    <>
+      <h4 className="stage-h" style={{ marginTop: "0.6rem" }}>
+        Channel assignments
+        <span className="stage-meta">
+          {bound.length} channel{bound.length === 1 ? "" : "s"}
+          {runId ? ` · run ${runId}` : ""}
+        </span>
+      </h4>
+      <table className="data">
+        <thead>
+          <tr><th>Channel</th><th>Reporter m/z</th><th>Sample</th><th>Role</th><th>Tag</th></tr>
+        </thead>
+        <tbody>
+          {bound.map((c, i) => (
+            <tr key={`${c.channelLabel ?? ""}:${c.sampleId ?? ""}:${i}`}>
+              <td className="mono">{c.channelLabel ?? "—"}</td>
+              <td title={c.reporterMz == null ? "reporter m/z unresolved" : undefined}>
+                {c.reporterMz == null ? "—" : c.reporterMz.toFixed(4)}
+              </td>
+              <td>
+                {c.sampleName ?? "—"}
+                {c.sampleId && <span className="hint"> ({c.sampleId})</span>}
+              </td>
+              <td><ProjRoleBadge role={c.role} /></td>
+              <td className="mono" title={c.tag ? cvTitle(cv, c.tag.id) ?? c.tag.id : undefined}>
+                {c.tag?.label ?? c.tag?.id ?? "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
+        Read from the file's encoded index (<code>run_sample_binding</code> ⋈ <code>sample_list</code>) —
+        the authoritative per-run mapping. The full study table lives in the embedded SDRF
+        (View raw below, or download it from the Structure tab).
+      </p>
+    </>
+  );
+}
+
 const HASH_BADGE: Record<string, { text: string; color: string }> = {
   verified: { text: "sha256 ✓ verified", color: "var(--accent-active)" },
   declared: { text: "sha256 declared (unverified)", color: "var(--text-muted)" },
@@ -180,13 +243,14 @@ export function StudySection() {
   if (!study) return null;
 
   const { investigation: inv, labeling, counts, biology, factors, provenance, rows } = study;
+  const isProjection = study.source === "projection";
   const matched = rows.filter((r) => r.matchesThisFile);
   const display = matched.length > 0 ? matched : rows;
   const isobaric = labeling.kind === "isobaric";
   const accUrl = accessionUrl(inv.accession);
   const plexLabel =
     labeling.kind === "isobaric"
-      ? `${labeling.reagent ?? "isobaric"}${labeling.plex ? ` ${labeling.plex}-plex` : ` · ${counts.channels} channels`}`
+      ? `${labeling.reagent ?? "isobaric"}${labeling.plex ? ` ${labeling.plex}-plex` : ""}`
       : labeling.kind === "silac" ? "SILAC"
       : labeling.kind === "label-free" ? "Label-free"
       : "Labeling: unclassified";
@@ -211,13 +275,19 @@ export function StudySection() {
         )}
         <span className="chip">{FORMAT_LABEL[study.format]}</span>
         <span className="chip">{plexLabel}</span>
-        <span className="chip">{counts.sourceSamples} samples</span>
-        {isobaric && <span className="chip">{counts.channels} channels</span>}
-        <span className="chip">{counts.dataFiles} files</span>
+        {isobaric && (
+          <span className="chip">
+            {counts.channels} channel{counts.channels === 1 ? "" : "s"}{isProjection ? " · this run" : ""}
+          </span>
+        )}
+        <span className="chip">{counts.sourceSamples} samples{isProjection ? " · study" : ""}</span>
+        {!isProjection && <span className="chip">{counts.dataFiles} files</span>}
       </div>
-      {inv.title && <p style={{ margin: "0 0 0.5rem", fontWeight: "var(--weight-medium)" }}>{inv.title}</p>}
+      {inv.title && inv.title !== inv.accession && (
+        <p style={{ margin: "0 0 0.5rem", fontWeight: "var(--weight-medium)" }}>{inv.title}</p>
+      )}
 
-      {/* Factors — the experimental design */}
+      {/* Factors — the experimental design (blob path; not projected in v0.8) */}
       {factors.length > 0 && (
         <div style={{ marginBottom: "0.5rem" }}>
           <span className="hint">Factors: </span>
@@ -231,7 +301,7 @@ export function StudySection() {
         </div>
       )}
 
-      {/* Biology summary */}
+      {/* Biology summary (blob path) */}
       {(biology.organisms.length || biology.diseases.length || biology.tissues.length) > 0 && (
         <table className="data" style={{ maxWidth: 560, marginBottom: "0.5rem" }}>
           <tbody>
@@ -244,16 +314,26 @@ export function StudySection() {
       )}
 
       {/* Channel / sample assignment */}
-      {display.length > 0 && (
-        isobaric ? <ChannelTable rows={display} /> : <SampleTable rows={display} />
+      {isProjection ? (
+        isobaric ? (
+          <ChannelAssignments channels={study.channels} runId={study.runId} />
+        ) : (
+          <p className="hint">
+            Label-free study — no isobaric channels. The sample list and full study
+            metadata are in the embedded document (View raw below).
+          </p>
+        )
+      ) : (
+        <>
+          {display.length > 0 && (isobaric ? <ChannelTable rows={display} /> : <SampleTable rows={display} />)}
+          {display.length > 0 && <AllCharacteristics rows={display} />}
+        </>
       )}
-
-      {/* Deferred long-tail (full characteristics matrix) behind an expander */}
-      {display.length > 0 && <AllCharacteristics rows={display} />}
 
       {/* Provenance + raw access */}
       <p className="hint" style={{ marginTop: "0.5rem" }}>
         Source: {FORMAT_LABEL[study.format]}
+        {isProjection ? " · index projection (run-scoped)" : " · embedded blob (parsed)"}
         {provenance.embedScope ? ` · ${provenance.embedScope}` : ""}
         {provenance.retrievedAt ? ` · ${provenance.retrievedAt}` : ""}
         {hash.text ? <> · <span style={{ color: hash.color }}>{hash.text}</span></> : null}

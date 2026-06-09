@@ -94,3 +94,53 @@ describe("readStudyMetadata — SDRF blob end-to-end", () => {
     expect(sm!.diagnostics.some((d) => /name scan/i.test(d))).toBe(true);
   });
 });
+
+describe("readStudyMetadata — projection-first (encoded sample_list ⋈ run_sample_binding)", () => {
+  const ch = (id: string, name: string, label: string, mz: number, role: string) => ({
+    id, name,
+    parameters: [
+      { accession: "MS:1002602", name: "sample label", value: label },
+      { accession: "mzml2mzpeak:reporter-ion-mz", name: "reporter ion m/z", value: String(mz) },
+      { accession: "mzml2mzpeak:channel-role", name: "channel role", value: role },
+      { accession: "UNIMOD:737", name: "tag modification", value: "TMT6plex" },
+    ],
+  });
+  const sampleList = [
+    ch("sample-1", "P1", "TMT126", 126.127726, "sample"),
+    ch("sample-2", "P2", "TMT127N", 127.124761, "sample"),
+    ch("sample-3", "Pool", "TMT131", 131.13818, "reference"),
+    ch("sample-9", "Other", "TMT128N", 128.128116, "sample"), // not bound to this run
+  ];
+
+  it("builds run-scoped channels from the projection (no blob parse)", async () => {
+    const r = fakeReader({
+      metadata: {
+        study: { accession: "PXD011799", title: "X", run_sample_binding: { run_id: "fr8", sample_ids: ["sample-1", "sample-2", "sample-3"] } },
+        sample_list: sampleList,
+      },
+      members: {},
+    });
+    const sm = await readStudyMetadata(r, "fr8.mzpeak");
+    expect(sm!.source).toBe("projection");
+    expect(sm!.runId).toBe("fr8");
+    expect(sm!.labeling.reagent).toBe("TMT");
+    const bound = sm!.channels.filter((c) => c.boundToThisRun);
+    expect(bound).toHaveLength(3);
+    expect(sm!.counts.channels).toBe(3);
+    expect(sm!.counts.sourceSamples).toBe(4); // study-wide includes the unbound entry
+    expect(sm!.rows).toHaveLength(0); // blob never parsed
+    const c0 = bound.find((c) => c.channelLabel === "TMT126")!;
+    expect(c0.reporterMz).toBeCloseTo(126.1277, 3);
+    expect(c0.tag?.id).toBe("UNIMOD:737");
+    expect(c0.sampleName).toBe("P1");
+    expect(bound.find((c) => c.channelLabel === "TMT131")!.role).toBe("reference");
+  });
+
+  it("falls back to study-wide channels when run_sample_binding is absent", async () => {
+    const r = fakeReader({ metadata: { study: { accession: "X" }, sample_list: sampleList }, members: {} });
+    const sm = await readStudyMetadata(r, "fr8.mzpeak");
+    expect(sm!.source).toBe("projection");
+    expect(sm!.channels.filter((c) => c.boundToThisRun)).toHaveLength(4);
+    expect(sm!.diagnostics.some((d) => /run_sample_binding/.test(d))).toBe(true);
+  });
+});

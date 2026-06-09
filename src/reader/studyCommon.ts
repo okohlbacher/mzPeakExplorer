@@ -1,7 +1,8 @@
 // Shared helpers for the SDRF and ISA readers: cell parsing, file matching, and
 // the format-agnostic finalize step (counts, factors, labeling, biology).
 import type {
-  Cell, Investigation, StudyFactor, StudyLabeling, StudyMetadata, StudyProvenance, StudyRow,
+  Cell, ChannelAssignment, Investigation, StudyFactor, StudyLabeling, StudyMetadata,
+  StudyProvenance, StudyRow,
 } from "./types";
 import { parseCurie } from "./curie";
 import { classifyLabel, nominalPlex } from "./reagents";
@@ -158,5 +159,22 @@ export function finalizeStudy(
     cellTypes: charValues("cell type"),
   };
 
-  return { format, investigation, rows, factors, labeling, counts, biology, provenance, diagnostics };
+  // Blob path: derive channel assignments from the isobaric rows (run-scoped by
+  // the file match). The projection path builds richer assignments directly.
+  const channels: ChannelAssignment[] = rows
+    .filter((r) => r.labelKind === "isobaric")
+    .map((r) => ({
+      channelLabel: r.label,
+      reporterMz: r.reporterMz,
+      role: r.role,
+      tag: r.tag,
+      sampleId: null,
+      sampleName: r.sourceName,
+      boundToThisRun: r.matchesThisFile,
+    }));
+
+  return {
+    format, source: "blob", investigation, channels, runId: null,
+    rows, factors, labeling, counts, biology, provenance, diagnostics,
+  };
 }

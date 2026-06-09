@@ -221,6 +221,24 @@ export type StudyRow = {
 
 export type StudyFactor = { name: string; levels: string[] };
 
+/** One channel→sample assignment, read from the ENCODED projection
+ *  (`sample_list` joined on `run_sample_binding`) — the authoritative, run-scoped
+ *  source — or derived from matched SDRF rows in the blob-fallback path. */
+export type ChannelAssignment = {
+  /** MS:1002602 "sample label" value, e.g. "TMT126". */
+  channelLabel: string | null;
+  reporterMz: number | null;
+  /** Producer channel-role value (sample | pooled | reference | carrier | …). */
+  role: string | null;
+  tag: CvRef | null;
+  /** Projection sample_list id (e.g. "sample-70"); null in the blob path. */
+  sampleId: string | null;
+  /** Source/sample name (e.g. "P1_frac_8_run_2"). */
+  sampleName: string | null;
+  /** True when bound to the open run via run_sample_binding (or matched file). */
+  boundToThisRun: boolean;
+};
+
 export type Investigation = {
   accession: string | null;
   title: string | null;
@@ -252,7 +270,14 @@ export type StudyLabeling = {
 
 export type StudyMetadata = {
   format: "sdrf" | "isa-tab" | "isa-json";
+  /** Where the summary came from: the encoded projection (preferred) or a parse
+   *  of the verbatim blob (fallback for files with no projection). */
+  source: "projection" | "blob";
   investigation: Investigation;
+  /** Channel→sample assignments (run-scoped); the dedicated channels view. */
+  channels: ChannelAssignment[];
+  /** The run id from run_sample_binding (projection), else null. */
+  runId: string | null;
   rows: StudyRow[];
   factors: StudyFactor[];
   labeling: StudyLabeling;
