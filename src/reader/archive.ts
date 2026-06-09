@@ -58,6 +58,30 @@ export function listArchive(reader: Reader): ArchiveListing {
   return { entries, totalCompressed, totalUncompressed };
 }
 
+/** Read a single ZIP member's raw bytes + UTF-8 text, bounded by `maxBytes`.
+ *  Used to pull the embedded SDRF/ISA blob (review §A-13). Returns null when the
+ *  member is absent; throws when it exceeds the size cap. */
+export async function readArchiveMember(
+  reader: Reader,
+  name: string,
+  maxBytes = 8 * 1024 * 1024,
+): Promise<{ bytes: Uint8Array; text: string } | null> {
+  const store = (reader as unknown as {
+    store?: { open?: (n: string) => Promise<{ size?: number; bytes(): Promise<Uint8Array> } | undefined> };
+  }).store;
+  if (!store?.open) return null;
+  const blob = await store.open(name);
+  if (!blob) return null;
+  if (typeof blob.size === "number" && blob.size > maxBytes) {
+    throw new Error(`Archive member "${name}" is ${blob.size} bytes (> ${maxBytes} cap).`);
+  }
+  const bytes = await blob.bytes();
+  if (bytes.byteLength > maxBytes) {
+    throw new Error(`Archive member "${name}" is ${bytes.byteLength} bytes (> ${maxBytes} cap).`);
+  }
+  return { bytes, text: new TextDecoder("utf-8").decode(bytes) };
+}
+
 // Minimal structural view of parquet-wasm's footer metadata objects.
 type ColumnChunk = {
   columnPath(): string[];

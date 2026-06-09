@@ -3,7 +3,8 @@ import { create } from "zustand";
 import { openBlob, openUrl, type Reader } from "../reader/open";
 import { fileMeta as readFileMeta, indexMetadata, manifest as readManifest } from "../reader/meta";
 import { computeFastSummary, scanSpectra } from "../reader/summary";
-import { listArchive, readParquetInfo } from "../reader/archive";
+import { listArchive, readParquetInfo, readArchiveMember } from "../reader/archive";
+import { readStudyMetadata } from "../reader/sampleMeta";
 import { deepColumn, sampleColumnNumbers } from "../reader/parquetDeep";
 import {
   chromatogramIds,
@@ -22,6 +23,7 @@ import type {
   ParquetInfo,
   SpectrumArrays,
   SpectrumIndexRow,
+  StudyMetadata,
 } from "../reader/types";
 
 // The live reader is held OUTSIDE zustand state — it is a large object full of
@@ -160,6 +162,8 @@ type State = {
   fileMeta: FileMeta | null;
   manifest: ManifestEntry[];
   indexMeta: unknown;
+  /** Embedded SDRF/ISA study metadata, parsed async after open; null when absent. */
+  studyMeta: StudyMetadata | null;
 
   // The per-spectrum scan (msLevels / ranges / Browse index) is expensive on a
   // huge file, so it is NOT run on open — only on demand or for small files.
@@ -214,6 +218,8 @@ type Actions = {
   selectByScanNumber: (scan: number) => Promise<boolean>;
   /** Update cache/preload settings (persisted; resizes the cache, (re)starts preload). */
   setSettings: (partial: Partial<Settings>) => void;
+  /** Read the raw embedded SDRF/ISA blob text (for the "View raw" affordance). */
+  getStudyBlob: () => Promise<string | null>;
 };
 
 const initial: State = {
@@ -227,6 +233,7 @@ const initial: State = {
   fileMeta: null,
   manifest: [],
   indexMeta: null,
+  studyMeta: null,
   scanning: false,
   scanned: false,
   scanProgress: null,
@@ -523,6 +530,18 @@ export const useStore = create<State & Actions>((set, get) => ({
     return true;
   },
 
+  async getStudyBlob() {
+    const r = reader;
+    const member = get().studyMeta?.provenance.member;
+    if (!r || !member) return null;
+    try {
+      const m = await readArchiveMember(r, member);
+      return m?.text ?? null;
+    } catch {
+      return null;
+    }
+  },
+
   setSettings(partial) {
     const cur = get().settings;
     const next: Settings = {
@@ -580,6 +599,16 @@ async function load(
       spectra: [],
       selectedIndex: null,
     });
+
+    // Embedded SDRF/ISA study metadata: parse the blob async (reads one small ZIP
+    // member + hashes it) so the overview paints first. Best-effort, non-fatal.
+    void readStudyMetadata(opened, fileName)
+      .then((studyMeta) => {
+        if (gen === loadGen) set({ studyMeta });
+      })
+      .catch(() => {
+        /* never block the file on study-metadata parsing */
+      });
 
     // Per the "metadata + counts, nothing else" rule, the per-spectrum scan does
     // NOT run on open. Small files scan automatically in the background (it's

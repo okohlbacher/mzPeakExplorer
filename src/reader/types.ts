@@ -175,3 +175,85 @@ export type StoredChromatogram = {
 };
 
 export type LoadStage = "idle" | "loading" | "ready" | "error";
+
+// ---- Study sample-metadata (SDRF / ISA) — see docs/sdrf-sample-metadata-display-SPEC.md ----
+
+/** A controlled-vocabulary reference; `prefix`/`accession` kept verbatim for display,
+ *  `id` = `${PREFIX}:${accession}` (prefix upper-cased) for case-insensitive lookups. */
+export type CvRef = { prefix: string; accession: string; id: string; label: string | null };
+
+/** One SDRF/ISA cell, parsed from `NT=…;AC=…` grammar or a plain/reserved value. */
+export type Cell = {
+  raw: string;
+  value: string | null;
+  cv: CvRef | null;
+  unit: CvRef | null;
+  reserved: "not available" | "not applicable" | "anonymized" | "pooled" | null;
+  /** Long-tail SDRF tokens (MT/TA/PP/…), kept verbatim; deferred from the dashboard. */
+  extra: Record<string, string>;
+};
+
+export type LabelKind = "isobaric" | "silac" | "label-free" | "other";
+export type ChannelRole =
+  | "experimental" | "reference" | "carrier" | "norm" | "empty" | "unknown";
+
+/** One SDRF relationship row, or an ISA assay-row projection. */
+export type StudyRow = {
+  sourceName: string;
+  assayName: string | null;
+  dataFile: string | null;
+  label: string | null;
+  labelKind: LabelKind;
+  reporterMz: number | null;
+  role: ChannelRole;
+  poolMembers: string[];
+  tag: CvRef | null;
+  fraction: string | null;
+  characteristics: Record<string, Cell>;
+  factors: Record<string, Cell>;
+  matchesThisFile: boolean;
+};
+
+export type StudyFactor = { name: string; levels: string[] };
+
+export type Investigation = {
+  accession: string | null;
+  title: string | null;
+  description: string | null;
+  contacts: string[];
+  publications: string[];
+  protocols: string[];
+};
+
+export type HashState = "verified" | "declared" | "mismatch" | "none";
+
+export type StudyProvenance = {
+  format: "sdrf" | "isa-tab" | "isa-json";
+  sourceUri: string | null;
+  embedScope: string | null;
+  retrievedAt: string | null;
+  sha256: string | null;
+  hashState: HashState;
+  /** Archive member the blob was read from. */
+  member: string | null;
+};
+
+export type StudyLabeling = {
+  kind: LabelKind;
+  /** Nominal reagent plex when known (e.g. 10 for TMT 10-plex), else null. */
+  plex: number | null;
+  reagent: string | null; // "TMT" | "TMTpro" | "iTRAQ" | "SILAC" | null
+};
+
+export type StudyMetadata = {
+  format: "sdrf" | "isa-tab" | "isa-json";
+  investigation: Investigation;
+  rows: StudyRow[];
+  factors: StudyFactor[];
+  labeling: StudyLabeling;
+  /** Three DISTINCT counts — never conflate (review §A-9). */
+  counts: { sourceSamples: number; channels: number; dataFiles: number; rows: number };
+  biology: { organisms: string[]; tissues: string[]; diseases: string[]; cellTypes: string[] };
+  provenance: StudyProvenance;
+  diagnostics: string[];
+};

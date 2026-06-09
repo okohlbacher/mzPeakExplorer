@@ -3,6 +3,7 @@ import { useStore } from "../state/store";
 import type { ImagingInfo } from "../reader/types";
 import { fmtBytes } from "./format";
 import { accessionIn, cvTitle, useCvTerms, type CvMap } from "./cvTerms";
+import { StudySection } from "./StudySection";
 
 /** An array-encoding pill that reveals its ontology term + definition on hover. */
 function EncodingChip({ code, cv }: { code: string; cv: CvMap | null }) {
@@ -269,6 +270,8 @@ export function SummaryTab() {
       </div>
 
       {s.imaging && <ImagingSection img={s.imaging} />}
+
+      <StudySection />
 
       {!scanned && (
         <div
