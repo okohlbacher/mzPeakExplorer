@@ -7,12 +7,13 @@ import {
   FolderOpen,
   FolderTree,
   LayoutDashboard,
-  Link2,
   ListTree,
   LoaderCircle,
+  Share2,
 } from "lucide-react";
 
 import { useStore, type Tab } from "../state/store";
+import { buildShareUrl, parseViewParams, type ViewState } from "./shareView";
 import { AppHeader, Badge, Button, Logo, SideNav, type NavItem } from "./components";
 import { DEMO_URL, IdleLoader } from "./FileLoader";
 import { SettingsMenu } from "./SettingsMenu";
@@ -87,6 +88,10 @@ export function App() {
   const openUrl = useStore((s) => s.openUrl);
   const selectByScanNumber = useStore((s) => s.selectByScanNumber);
   const showStoredChromatogram = useStore((s) => s.showStoredChromatogram);
+  const setMsLevelFilter = useStore((s) => s.setMsLevelFilter);
+  const selectSpectrum = useStore((s) => s.selectSpectrum);
+  const runXic = useStore((s) => s.runXic);
+  const showTic = useStore((s) => s.showTic);
 
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
@@ -101,39 +106,66 @@ export function App() {
   // so links like .../mzPeakExplorer/?file=https://host/x.mzpeak start the viewer
   // directly on that file. The remote host must allow CORS + range requests.
   //
-  // Optional landing target on the same link:
-  //   ?scan=<native scan number>  → open the Spectra view on that spectrum
-  //   ?chrom=<index|id>           → open the Chromatograms view on that stored chromatogram
-  // A miss (no such scan/chromatogram) lands on the overview with an error banner.
+  // "Share view" carries the full view on the same link (see shareView.ts):
+  //   ?tab= ?scan=/?spectrum= ?ms= ?xic=/?chrom=
+  // so a recipient lands on exactly what the sharer saw. A miss (no such
+  // scan/chromatogram) lands on the overview with an error banner.
   const deepLinkDone = useRef(false);
-  const pendingTarget = useRef<{ scan: string | null; chrom: string | null } | null>(null);
+  const pendingTarget = useRef<ReturnType<typeof parseViewParams> | null>(null);
   useEffect(() => {
     if (deepLinkDone.current) return;
     deepLinkDone.current = true;
-    const p = new URLSearchParams(window.location.search);
-    const fileUrl = p.get("file") ?? p.get("url");
-    const scan = p.get("scan");
-    const chrom = p.get("chrom");
-    if (scan != null || chrom != null) pendingTarget.current = { scan, chrom };
-    if (fileUrl && /^https?:\/\//i.test(fileUrl)) void openUrl(fileUrl);
+    const v = parseViewParams(window.location.search);
+    pendingTarget.current = v;
+    if (v.file && /^https?:\/\//i.test(v.file)) void openUrl(v.file);
   }, [openUrl]);
 
-  // Once the deep-linked file is open, jump to the requested scan / chromatogram.
-  // Runs once; ?scan= wins if both are present.
+  // Once the deep-linked file is open, replay the view: tab → MS filter →
+  // spectrum → chromatogram. Runs once; best-effort + non-fatal.
   const targetApplied = useRef(false);
   useEffect(() => {
     if (targetApplied.current || stage !== "ready") return;
-    const t = pendingTarget.current;
-    if (!t) return;
+    const v = pendingTarget.current;
+    if (!v) return;
     targetApplied.current = true;
-    if (t.scan != null) void selectByScanNumber(Number(t.scan));
-    else if (t.chrom != null) void showStoredChromatogram(t.chrom);
-  }, [stage, selectByScanNumber, showStoredChromatogram]);
+    void (async () => {
+      if (v.tab) setTab(v.tab as Tab);
+      if (v.ms != null && /^\d+$/.test(v.ms)) await setMsLevelFilter(Number(v.ms));
+      // Selection unless explicitly landing on the chromatograms tab.
+      if (v.tab !== "chromatograms") {
+        if (v.scan != null) await selectByScanNumber(Number(v.scan));
+        else if (v.spectrum != null && /^\d+$/.test(v.spectrum)) await selectSpectrum(Number(v.spectrum));
+      }
+      // Chromatogram unless explicitly landing on the spectra tab.
+      if (v.tab !== "spectra") {
+        if (v.xic != null) {
+          const [mz, tol] = v.xic.split(",").map(Number);
+          if (Number.isFinite(mz) && Number.isFinite(tol)) await runXic(mz, tol);
+        } else if (v.chrom === "tic") await showTic();
+        else if (v.chrom != null) await showStoredChromatogram(v.chrom);
+      }
+    })();
+  }, [stage, setTab, setMsLevelFilter, selectByScanNumber, selectSpectrum, runXic, showTic, showStoredChromatogram]);
 
   const [copied, setCopied] = useState(false);
-  function copyDeepLink() {
-    if (!sourceUrl) return;
-    const link = `${window.location.origin}${window.location.pathname}?file=${encodeURIComponent(sourceUrl)}`;
+  function shareView() {
+    const s = useStore.getState();
+    if (!s.sourceUrl) return;
+    const selectedId =
+      s.selectedIndex != null
+        ? s.selectedSpectrum?.id ?? s.spectra[s.selectedIndex]?.id ?? null
+        : null;
+    const view: ViewState = {
+      sourceUrl: s.sourceUrl,
+      tab: s.tab,
+      selectedIndex: s.selectedIndex,
+      selectedId,
+      msLevelFilter: s.msLevelFilter,
+      chromMode: s.chromMode,
+      xic: s.xicParams ? { mz: s.xicParams.mz, tolDa: s.xicParams.tolDa } : null,
+      chromStoredId: s.chromStoredId,
+    };
+    const link = buildShareUrl(view, window.location.origin, window.location.pathname);
     void navigator.clipboard?.writeText(link).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
@@ -198,11 +230,11 @@ export function App() {
               <Button
                 variant="ghost"
                 size="sm"
-                iconLeft={copied ? <Check size={15} /> : <Link2 size={15} />}
-                onClick={copyDeepLink}
-                title="Copy a shareable link that opens this file directly"
+                iconLeft={copied ? <Check size={15} /> : <Share2 size={15} />}
+                onClick={shareView}
+                title="Copy a link that reproduces this exact view — tab, spectrum, chromatogram, and MS-level filter (includes the dataset URL)"
               >
-                {copied ? "Copied" : "Copy link"}
+                {copied ? "Copied" : "Share view"}
               </Button>
             )}
             {ready ? (
