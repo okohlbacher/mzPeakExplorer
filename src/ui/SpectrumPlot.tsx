@@ -36,17 +36,23 @@ function toSeries(s: SpectrumArrays | null): uPlot.AlignedData {
   return [xs, ys];
 }
 
+export type ReporterMarker = { mz: number; label: string; matched: boolean };
+
 export function SpectrumPlot({
   spectrum,
   xicWindow,
+  reporters,
 }: {
   spectrum: SpectrumArrays | null;
   xicWindow: { mz: number; tolDa: number } | null;
+  reporters?: ReporterMarker[];
 }) {
   const specRef = useRef<SpectrumArrays | null>(spectrum);
   specRef.current = spectrum;
   const windowRef = useRef(xicWindow);
   windowRef.current = xicWindow;
+  const reportersRef = useRef<ReporterMarker[] | undefined>(reporters);
+  reportersRef.current = reporters;
   const tipRef = useRef<HTMLDivElement | null>(null);
 
   const hostRef = useUplot(
@@ -73,6 +79,7 @@ export function SpectrumPlot({
         hooks: {
           draw: [
             (u) => drawXicBand(u, windowRef.current),
+            (u) => drawReporterMarkers(u, reportersRef.current),
             (u) => drawPeakLabels(u, specRef.current),
           ],
           setCursor: [(u) => updateTooltip(u, tipRef.current, specRef.current)],
@@ -102,6 +109,41 @@ function drawXicBand(u: uPlot, win: { mz: number; tolDa: number } | null) {
   ctx.save();
   ctx.fillStyle = STAGE.band;
   ctx.fillRect(xLo, u.bbox.top, xHi - xLo, u.bbox.height);
+  ctx.restore();
+}
+
+/** Vertical markers at each channel's reporter m/z; labels appear once zoomed
+ *  into the reporter region (span ≤ 25 Da) to avoid clutter at full range. */
+function drawReporterMarkers(u: uPlot, reporters: ReporterMarker[] | undefined) {
+  if (!reporters || reporters.length === 0) return;
+  const xmin = u.scales.x.min;
+  const xmax = u.scales.x.max;
+  if (xmin == null || xmax == null) return;
+  const span = xmax - xmin;
+  const { ctx } = u;
+  const top = u.bbox.top;
+  const bottom = top + u.bbox.height;
+  ctx.save();
+  for (const r of reporters) {
+    if (r.mz < xmin || r.mz > xmax) continue;
+    const x = u.valToPos(r.mz, "x", true);
+    ctx.beginPath();
+    ctx.setLineDash([3, 3]);
+    ctx.globalAlpha = r.matched ? 0.55 : 0.3;
+    ctx.strokeStyle = r.matched ? STAGE.marker : STAGE.axis;
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+    if (span <= 25) {
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.font = "10px IBM Plex Mono, monospace";
+      ctx.fillStyle = r.matched ? STAGE.marker : STAGE.axis;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(r.label, x, top + 2);
+    }
+  }
   ctx.restore();
 }
 

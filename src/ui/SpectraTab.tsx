@@ -1,8 +1,59 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useStore } from "../state/store";
 import { SpectrumPlot } from "./SpectrumPlot";
 import { TreeView } from "./TreeView";
 import { Button, PlotSpinner, Select, TextField } from "./components";
+import { spectrumReporters, type ReporterPeak } from "./reporters";
+import { compactIntensity } from "./chartTheme";
+
+/** Reporter-ion quant pills: per-channel intensity extracted from the spectrum's
+ *  reporter peaks (shown only when channels exist and reporters were detected). */
+function ReporterPills({ reporters }: { reporters: ReporterPeak[] }) {
+  const matched = reporters.filter((r) => r.intensity != null);
+  if (matched.length === 0) return null;
+  const total = matched.reduce((s, r) => s + (r.intensity ?? 0), 0);
+  const max = Math.max(...matched.map((r) => r.intensity ?? 0), 1);
+  return (
+    <div style={{ marginTop: "0.45rem" }}>
+      <div className="hint" style={{ marginBottom: "0.25rem" }}>
+        Reporter ions — {matched.length}/{reporters.length} channels detected (extracted at ±5 mDa)
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+        {reporters.map((r, i) => {
+          const has = r.intensity != null;
+          const pct = has && total > 0 ? (100 * (r.intensity ?? 0)) / total : 0;
+          return (
+            <div
+              key={`${r.channelLabel ?? ""}:${i}`}
+              title={`${r.channelLabel ?? "?"} · ${r.sampleName ?? ""} · reporter m/z ${r.reporterMz.toFixed(4)}${
+                has ? ` · ${(r.intensity ?? 0).toExponential(3)} (${pct.toFixed(1)}%)` : " · not detected"
+              }`}
+              style={{
+                display: "flex", flexDirection: "column", gap: 2, minWidth: 86,
+                padding: "0.3rem 0.45rem", border: "1px solid var(--border-default)",
+                borderRadius: "var(--radius-sm)", background: "var(--surface-card)", opacity: has ? 1 : 0.5,
+              }}
+            >
+              <span style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                <span className="mono" style={{ fontSize: "var(--text-xs)", color: "var(--text-heading)" }}>{r.channelLabel}</span>
+                <span className="hint" style={{ fontSize: "var(--text-xs)" }}>{has ? `${pct.toFixed(0)}%` : "—"}</span>
+              </span>
+              <span style={{ fontSize: "var(--text-sm)", fontVariantNumeric: "tabular-nums" }}>
+                {has ? compactIntensity(r.intensity ?? 0) : "—"}
+              </span>
+              <span style={{ height: 3, borderRadius: 2, background: "var(--surface-panel)", overflow: "hidden" }}>
+                <span style={{ display: "block", height: "100%", width: `${has ? (100 * (r.intensity ?? 0)) / max : 0}%`, background: "var(--accent)" }} />
+              </span>
+              <span className="hint" style={{ fontSize: "var(--text-xs)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 92 }}>
+                {r.sampleName ?? ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /** The Spectra view: navigate + inspect individual spectra (optionally filtered
  *  by MS level). The TIC / XIC chromatogram lives in the Chromatograms tab. */
@@ -26,6 +77,17 @@ export function SpectraTab() {
   const stepSpectrum = useStore((s) => s.stepSpectrum);
   const chromMode = useStore((s) => s.chromMode);
   const xicParams = useStore((s) => s.xicParams);
+  const study = useStore((s) => s.studyMeta);
+
+  // Reporter-ion quant overlay: only when the file has isobaric channels and the
+  // selected spectrum (MSn≥2) actually contains the reporter ions.
+  const { reporters, matched } = useMemo(
+    () => spectrumReporters(study?.channels, selectedSpectrum),
+    [study, selectedSpectrum],
+  );
+  const reporterMarkers = matched > 0
+    ? reporters.map((r) => ({ mz: r.reporterMz, label: r.channelLabel ?? "", matched: r.intensity != null }))
+    : undefined;
 
   const n = numSpectra;
   if (n === 0) {
@@ -178,12 +240,15 @@ export function SpectraTab() {
             <SpectrumPlot
               spectrum={selectedSpectrum}
               xicWindow={chromMode === "xic" ? xicParams : null}
+              reporters={reporterMarkers}
             />
             {spectrumLoading && <PlotSpinner label="Loading spectrum…" />}
           </div>
+          {matched > 0 && <ReporterPills reporters={reporters} />}
           <p className="stage-hint" style={{ marginTop: "0.25rem" }}>
             {reprHint ? `${reprHint} · ` : ""}scroll to zoom · drag a box to zoom
             m/z · middle-drag to pan · double-click to reset
+            {matched > 0 ? " · reporter ions marked in red" : ""}
           </p>
         </div>
         </div>
