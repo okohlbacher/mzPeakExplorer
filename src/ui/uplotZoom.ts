@@ -1,4 +1,5 @@
 import type uPlot from "uplot";
+import { finiteExtent } from "./chartTheme";
 
 /**
  * uPlot interaction plugin for 1-D spectra / chromatograms:
@@ -13,17 +14,20 @@ import type uPlot from "uplot";
  */
 export function wheelZoomPlugin(opts: { factor?: number } = {}): uPlot.Plugin {
   const factor = opts.factor ?? 0.8;
+  // Abort any in-flight middle-drag document listeners if the plot is destroyed
+  // mid-drag (otherwise they target a dead instance). Plugin-scoped so the
+  // `destroy` hook can reach it (CODEX-REVIEW uplotZoom).
+  let drag: AbortController | null = null;
 
   return {
     hooks: {
       ready: (u: uPlot) => {
         const over = u.over;
 
-        const xBounds = (): [number, number] | null => {
-          const xs = u.data[0];
-          if (!xs || xs.length === 0) return null;
-          return [xs[0] as number, xs[xs.length - 1] as number];
-        };
+        // Finite extent (not xs[0]/xs[last]) so the pan/zoom clamp is correct
+        // for unsorted or NaN-ended data (CODEX-REVIEW uplotZoom).
+        const xBounds = (): [number, number] | null => finiteExtent(u.data[0]);
+
 
         over.addEventListener(
           "wheel",
@@ -82,13 +86,16 @@ export function wheelZoomPlugin(opts: { factor?: number } = {}): uPlot.Plugin {
             }
             u.setScale("x", { min: nMin, max: nMax });
           };
-          const onUp = () => {
-            document.removeEventListener("mousemove", onMove);
-            document.removeEventListener("mouseup", onUp);
-          };
-          document.addEventListener("mousemove", onMove);
-          document.addEventListener("mouseup", onUp);
+          drag?.abort(); // cancel any prior unfinished drag
+          drag = new AbortController();
+          const { signal } = drag;
+          const onUp = () => drag?.abort();
+          document.addEventListener("mousemove", onMove, { signal });
+          document.addEventListener("mouseup", onUp, { signal });
         });
+      },
+      destroy: () => {
+        drag?.abort();
       },
     },
   };

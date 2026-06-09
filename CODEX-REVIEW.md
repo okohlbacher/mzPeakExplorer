@@ -1,5 +1,36 @@
 # Adversarial Code Review
 
+## Resolution status (2026-06-09)
+
+Most findings have since been fixed; this header records the current state. The
+original findings are preserved below for traceability.
+
+**HIGH — all FIXED:** the four stale-async races (`selectSpectrum` / `runXic` /
+`showTic` / load) now capture `(reader, loadGen)` and bail on mismatch; `runXic`
+runs the representation scan before choosing `useProfile`.
+
+**MEDIUM:**
+- FIXED — `plainify` uses unsafe-key skipping + `MAX_ARRAY`/`MAX_DEPTH` caps +
+  BigInt-as-string (no proto pollution, no unbounded materialization, no silent
+  precision loss).
+- FIXED — `cv.numOrNull` is strict (number/safe-BigInt only; no `Number(string)`).
+- FIXED — `getSpectrumArrays` now `sanitizePairs` (drops non-finite, enforces
+  ascending m/z, reconciles length) on a no-copy fast path.
+- FIXED — `chartTheme.xRange` scans for finite min/max via `finiteExtent`.
+- FIXED — `uplotZoom` bounds use `finiteExtent`; middle-drag listeners use an
+  `AbortController` cleaned up on a `destroy` hook.
+- FIXED — stored chromatograms are sanitized (finite + sorted by time).
+- ACCEPTED (low risk) — `runScan` surfaces the error + clears flags (callers
+  check `scanned`); `extractChromatogram` index `Number()` is safe in practice
+  (spectrum indexes ≪ 2^53); `initBrowse` re-entry guard kept (Prev/Next allows
+  recovery after a transient first-spectrum failure).
+
+**LOW/NIT — FIXED:** `FileLoader` extension check is case-insensitive; `StatCard`
+removed; manifest rows keyed by `${i}:${e.name}`. `useUplot` dependency-array
+shape left as-is by design.
+
+---
+
 ## HIGH
 
 - SEVERITY: HIGH

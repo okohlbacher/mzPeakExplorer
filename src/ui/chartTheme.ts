@@ -28,11 +28,29 @@ export function xRange(
   initMax: number,
 ): [number, number] {
   if (Number.isFinite(initMin) && Number.isFinite(initMax)) return [initMin, initMax];
-  const xs = u.data[0];
-  if (!xs || xs.length === 0) return [0, 1];
-  const a = xs[0] as number;
-  const b = xs[xs.length - 1] as number;
+  // Scan for the finite min/max rather than trusting xs[0]/xs[last], which are
+  // wrong for unsorted or NaN-terminated data (CODEX-REVIEW chartTheme).
+  const ext = finiteExtent(u.data[0]);
+  if (!ext) return [0, 1];
+  const [a, b] = ext;
   return [a, b > a ? b : a + 1];
+}
+
+/** Finite [min, max] over an x-array, or null when there are no finite values. */
+export function finiteExtent(
+  xs: ArrayLike<number | null | undefined> | undefined,
+): [number, number] | null {
+  if (!xs || xs.length === 0) return null;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < xs.length; i++) {
+    const v = xs[i];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  return lo <= hi ? [lo, hi] : null;
 }
 
 /**

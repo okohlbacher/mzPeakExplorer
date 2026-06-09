@@ -15,6 +15,40 @@ const INTENSITY_KEY = "intensity array";
 const TIME_KEY = "time array";
 
 /**
+ * Drop non-finite (x, y) pairs and guarantee ascending x — the plot, the
+ * binary-search hover, and the zoom clamp all assume sorted finite x-values
+ * (CODEX-REVIEW browse). Fast path: when the input is already finite + sorted +
+ * equal-length (the normal case for real data), the inputs are returned
+ * unchanged with no copy.
+ */
+function sanitizePairs(
+  x: Float64Array,
+  y: Float32Array,
+): { x: Float64Array; y: Float32Array } {
+  const n = Math.min(x.length, y.length);
+  let clean = x.length === y.length;
+  for (let i = 0; i < n && clean; i++) {
+    if (!Number.isFinite(x[i]) || !Number.isFinite(y[i]) || (i > 0 && x[i] < x[i - 1])) {
+      clean = false;
+    }
+  }
+  if (clean) return { x, y };
+
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (Number.isFinite(x[i]) && Number.isFinite(y[i])) idx.push(i);
+  }
+  idx.sort((a, b) => x[a] - x[b]);
+  const nx = new Float64Array(idx.length);
+  const ny = new Float32Array(idx.length);
+  for (let i = 0; i < idx.length; i++) {
+    nx[i] = x[idx[i]];
+    ny[i] = y[idx[i]];
+  }
+  return { x: nx, y: ny };
+}
+
+/**
  * Full per-spectrum metadata for the selected spectrum, plainified for the
  * Metadata tree (CV params, scans + scan windows, precursors, and the promoted
  * column bag). Metadata-only — reads the already-loaded spectrum metadata table,
@@ -97,12 +131,10 @@ export async function getSpectrumArrays(
     throw new Error(`Spectrum ${index} has no reconstructable m/z + intensity arrays`);
   }
 
-  if (mz.length !== intensity.length) {
-    throw new Error(
-      `Spectrum ${index}: m/z (${mz.length}) / intensity (${intensity.length}) length mismatch`,
-    );
-  }
-  return { index, id, msLevel, representation, time, mz, intensity };
+  // Defensively drop non-finite points and enforce ascending m/z (the plot +
+  // hover binary-search assume it); a length mismatch is reconciled here too.
+  const clean = sanitizePairs(mz, intensity);
+  return { index, id, msLevel, representation, time, mz: clean.x, intensity: clean.y };
 }
 
 type XicPoint = {
@@ -171,12 +203,9 @@ export async function getStoredChromatogram(
   const t = da[TIME_KEY];
   const inten = da[INTENSITY_KEY];
   if (!t || !inten) return null;
-  return {
-    index,
-    id: String(chrom.id),
-    time: Float64Array.from(t),
-    intensity: Float32Array.from(inten),
-  };
+  // Drop non-finite pairs and sort by time (clicking maps time → nearest spectrum).
+  const clean = sanitizePairs(Float64Array.from(t), Float32Array.from(inten));
+  return { index, id: String(chrom.id), time: clean.x, intensity: clean.y };
 }
 
 export function chromatogramIds(reader: Reader): { index: number; id: string }[] {
