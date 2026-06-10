@@ -10,6 +10,7 @@ const base: ViewState = {
   chromMode: "tic",
   xic: null,
   chromStoredId: null,
+  spectrumZoom: null,
 };
 const qs = (s: ViewState) => serializeViewParams(s).toString();
 
@@ -50,6 +51,16 @@ describe("serializeViewParams", () => {
     const s: ViewState = { ...base, tab: "spectra", selectedIndex: 5, selectedId: "scan=1024", msLevelFilter: 2 };
     const p = parseViewParams("?" + qs(s));
     expect(p).toEqual({ file: "https://host/x.mzpeak", tab: "spectra", scan: "1024", ms: "2" });
+  });
+
+  it("encodes the spectrum m/z zoom (only with a selected spectrum)", () => {
+    const withSel = parseViewParams(
+      "?" + qs({ ...base, tab: "spectra", selectedIndex: 5, selectedId: "scan=1024", spectrumZoom: [126.0, 131.2] }),
+    );
+    expect(withSel.scan).toBe("1024");
+    expect(withSel.mz).toBe("126,131.2");
+    // No selected spectrum → no zoom emitted.
+    expect(parseViewParams("?" + qs({ ...base, spectrumZoom: [126, 131] })).mz).toBeUndefined();
   });
 });
 

@@ -1,11 +1,18 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { SpectrumArrays } from "../reader/types";
 import { wheelZoomPlugin } from "./uplotZoom";
-import { STAGE, stageAxes, xRange } from "./chartTheme";
+import { STAGE, stageAxes, xRange, finiteExtent } from "./chartTheme";
 import { nearestPeakIndex, topPeakIndices } from "./peaks";
 import { useUplot } from "./useUplot";
+
+const ZOOM_EPS = 1e-4;
+function sameRange(a: [number, number] | null, b: [number, number] | null): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return Math.abs(a[0] - b[0]) < ZOOM_EPS && Math.abs(a[1] - b[1]) < ZOOM_EPS;
+}
 
 /**
  * Single-spectrum plot: m/z (x) vs intensity (y). Profile spectra draw as a
@@ -42,10 +49,16 @@ export function SpectrumPlot({
   spectrum,
   xicWindow,
   reporters,
+  zoom,
+  onZoomChange,
 }: {
   spectrum: SpectrumArrays | null;
   xicWindow: { mz: number; tolDa: number } | null;
   reporters?: ReporterMarker[];
+  /** Desired m/z view [lo, hi] (null = full); applied imperatively for Share view. */
+  zoom?: [number, number] | null;
+  /** Reports the live m/z view to the store (null at full range). */
+  onZoomChange?: (range: [number, number] | null) => void;
 }) {
   const specRef = useRef<SpectrumArrays | null>(spectrum);
   specRef.current = spectrum;
@@ -53,6 +66,12 @@ export function SpectrumPlot({
   windowRef.current = xicWindow;
   const reportersRef = useRef<ReporterMarker[] | undefined>(reporters);
   reportersRef.current = reporters;
+  const zoomRef = useRef<[number, number] | null | undefined>(zoom);
+  zoomRef.current = zoom;
+  const onZoomRef = useRef(onZoomChange);
+  onZoomRef.current = onZoomChange;
+  const plotRef = useRef<uPlot | null>(null);
+  const rafRef = useRef<number | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
 
   const hostRef = useUplot(
@@ -83,9 +102,11 @@ export function SpectrumPlot({
             (u) => drawPeakLabels(u, specRef.current),
           ],
           setCursor: [(u) => updateTooltip(u, tipRef.current, specRef.current)],
+          setScale: [(u, key) => key === "x" && reportZoom(u, rafRef, zoomRef, onZoomRef)],
         },
       };
       const plot = new uPlot(opts, data, el);
+      plotRef.current = plot;
       // Tooltip lives inside the cursor overlay so its coords match cursor.left/top.
       const tip = document.createElement("div");
       tip.className = "spec-tooltip";
@@ -98,7 +119,42 @@ export function SpectrumPlot({
     [xicWindow],
   );
 
+  // Restore a requested m/z view (Share view deep link) imperatively — no rebuild,
+  // so it also works when the zoom arrives after the spectrum has loaded.
+  useEffect(() => {
+    const u = plotRef.current;
+    if (!u || !zoom) return;
+    const cur: [number, number] | null =
+      u.scales.x.min != null && u.scales.x.max != null ? [u.scales.x.min, u.scales.x.max] : null;
+    if (sameRange(cur, zoom)) return;
+    u.setScale("x", { min: zoom[0], max: zoom[1] });
+  }, [zoom, spectrum]);
+
   return <div ref={hostRef} className="chart-host" />;
+}
+
+/** Report the live x-axis (m/z) view to the store, debounced to one frame.
+ *  Maps the full data extent to null and skips echoing the requested zoom. */
+function reportZoom(
+  u: uPlot,
+  rafRef: { current: number | null },
+  zoomRef: { current: [number, number] | null | undefined },
+  onZoomRef: { current: ((r: [number, number] | null) => void) | undefined },
+) {
+  if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+  rafRef.current = requestAnimationFrame(() => {
+    rafRef.current = null;
+    const cb = onZoomRef.current;
+    if (!cb) return;
+    const min = u.scales.x.min;
+    const max = u.scales.x.max;
+    if (min == null || max == null) return;
+    const ext = finiteExtent(u.data[0]);
+    const isFull = !ext || (Math.abs(min - ext[0]) < ZOOM_EPS && Math.abs(max - ext[1]) < ZOOM_EPS);
+    const next: [number, number] | null = isFull ? null : [min, max];
+    if (sameRange(next, zoomRef.current ?? null)) return; // don't echo our own set
+    cb(next);
+  });
 }
 
 function drawXicBand(u: uPlot, win: { mz: number; tolDa: number } | null) {

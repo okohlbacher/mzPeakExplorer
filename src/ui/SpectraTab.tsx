@@ -78,6 +78,8 @@ export function SpectraTab() {
   const chromMode = useStore((s) => s.chromMode);
   const xicParams = useStore((s) => s.xicParams);
   const study = useStore((s) => s.studyMeta);
+  const spectrumZoom = useStore((s) => s.spectrumZoom);
+  const setSpectrumZoom = useStore((s) => s.setSpectrumZoom);
 
   // Reporter-ion quant overlay: only when the file has isobaric channels and the
   // selected spectrum (MSn≥2) actually contains the reporter ions.
@@ -241,6 +243,8 @@ export function SpectraTab() {
               spectrum={selectedSpectrum}
               xicWindow={chromMode === "xic" ? xicParams : null}
               reporters={reporterMarkers}
+              zoom={spectrumZoom}
+              onZoomChange={setSpectrumZoom}
             />
             {spectrumLoading && <PlotSpinner label="Loading spectrum…" />}
           </div>

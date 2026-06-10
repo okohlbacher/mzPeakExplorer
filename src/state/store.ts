@@ -193,6 +193,8 @@ type State = {
   browseInited: boolean;
   /** Spectra preloaded into the in-memory cache (background buffering progress). */
   buffered: number;
+  /** Current spectrum-plot m/z view [lo, hi], or null at full range (for Share view). */
+  spectrumZoom: [number, number] | null;
   /** Cache/preload settings (persisted per session; presettable via URL). */
   settings: Settings;
 };
@@ -200,7 +202,9 @@ type State = {
 type Actions = {
   setTab: (tab: Tab) => void;
   openFile: (file: File) => Promise<void>;
-  openUrl: (url: string) => Promise<void>;
+  /** `deferPreload` suppresses the open-time background preload so a deep-linked
+   *  spectrum can load first; call `startPreload()` once it has. */
+  openUrl: (url: string, opts?: { deferPreload?: boolean }) => Promise<void>;
   /** Run the per-spectrum scan on demand (MS levels, ranges, Browse index). */
   computeBreakdown: () => Promise<void>;
   initBrowse: () => Promise<void>;
@@ -216,6 +220,10 @@ type Actions = {
   showStoredChromatogram: (idOrIndex: string) => Promise<boolean>;
   /** Jump to the spectrum with this native scan number (from its id); used by ?scan= deep links. */
   selectByScanNumber: (scan: number) => Promise<boolean>;
+  /** Set the current spectrum-plot m/z view (null = full range); for Share view. */
+  setSpectrumZoom: (range: [number, number] | null) => void;
+  /** Start the background preloader (used after a deep-linked spectrum has loaded). */
+  startPreload: () => void;
   /** Update cache/preload settings (persisted; resizes the cache, (re)starts preload). */
   setSettings: (partial: Partial<Settings>) => void;
   /** Read the raw embedded SDRF/ISA blob text (for the "View raw" affordance). */
@@ -247,6 +255,7 @@ const initial: State = {
   chromLoading: false,
   xicParams: null,
   chromStoredId: null,
+  spectrumZoom: null,
   storedChromIds: [],
   browseInited: false,
   buffered: 0,
@@ -280,9 +289,9 @@ export const useStore = create<State & Actions>((set, get) => ({
     await load(set, get, file.name, file.size, () => openBlob(file), null);
   },
 
-  async openUrl(url) {
+  async openUrl(url, opts) {
     const name = url.split("/").pop() || url;
-    await load(set, get, name, null, () => openUrl(url), url);
+    await load(set, get, name, null, () => openUrl(url), url, opts?.deferPreload ?? false);
   },
 
   // Run the per-spectrum scan on demand (the "Compute breakdown" / "Build TIC" /
@@ -315,11 +324,11 @@ export const useStore = create<State & Actions>((set, get) => ({
       const cached = specCache.get(index);
       if (cached) {
         cacheSpectrum(index, cached); // refresh LRU
-        set({ selectedIndex: index, selectedMeta: meta, selectedSpectrum: cached, spectrumLoading: false, error: null });
+        set({ selectedIndex: index, selectedMeta: meta, selectedSpectrum: cached, spectrumLoading: false, error: null, spectrumZoom: null });
         return;
       }
       // Cache miss: metadata is instant; show the spinner while the signal loads.
-      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, selectedSpectrum: null, error: null });
+      set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, selectedSpectrum: null, error: null, spectrumZoom: null });
       const spectrum = await serialRead(() => getSpectrumArrays(r, index));
       cacheSpectrum(index, spectrum);
       // Ignore if a newer file loaded or the user moved on meanwhile.
@@ -542,6 +551,16 @@ export const useStore = create<State & Actions>((set, get) => ({
     }
   },
 
+  setSpectrumZoom(range) {
+    set({ spectrumZoom: range });
+  },
+
+  startPreload() {
+    if (reader && get().stage === "ready") {
+      void preloadInBackground(set, get, reader, loadGen);
+    }
+  },
+
   setSettings(partial) {
     const cur = get().settings;
     const next: Settings = {
@@ -570,6 +589,7 @@ async function load(
   fileSize: number | null,
   open: () => Promise<Reader>,
   sourceUrl: string | null,
+  deferPreload = false,
 ): Promise<void> {
   const gen = ++loadGen;
   scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
@@ -621,7 +641,9 @@ async function load(
     // Background warm-up: now that the overview is on screen, preload the TIC and
     // as many spectrum signal arrays as fit in the memory budget, so the Spectra
     // and Chromatograms tabs are already buffered when the user gets there.
-    if (summary.numSpectra > 0) void preloadInBackground(set, get, opened, gen);
+    // Deferred for deep links with a spectrum target: the App loads that spectrum
+    // first (so it isn't stuck behind the preloader over HTTP), then startPreload().
+    if (summary.numSpectra > 0 && !deferPreload) void preloadInBackground(set, get, opened, gen);
   } catch (err) {
     if (gen !== loadGen) return;
     reader = null;

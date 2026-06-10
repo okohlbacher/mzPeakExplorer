@@ -92,6 +92,8 @@ export function App() {
   const selectSpectrum = useStore((s) => s.selectSpectrum);
   const runXic = useStore((s) => s.runXic);
   const showTic = useStore((s) => s.showTic);
+  const setSpectrumZoom = useStore((s) => s.setSpectrumZoom);
+  const startPreload = useStore((s) => s.startPreload);
 
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
@@ -117,7 +119,10 @@ export function App() {
     deepLinkDone.current = true;
     const v = parseViewParams(window.location.search);
     pendingTarget.current = v;
-    if (v.file && /^https?:\/\//i.test(v.file)) void openUrl(v.file);
+    // Defer the background preloader when a spectrum is deep-linked, so that
+    // spectrum loads first instead of queuing behind the preloader over HTTP.
+    const deferPreload = v.scan != null || v.spectrum != null;
+    if (v.file && /^https?:\/\//i.test(v.file)) void openUrl(v.file, { deferPreload });
   }, [openUrl]);
 
   // Once the deep-linked file is open, replay the view: tab → MS filter →
@@ -131,10 +136,16 @@ export function App() {
     void (async () => {
       if (v.tab) setTab(v.tab as Tab);
       if (v.ms != null && /^\d+$/.test(v.ms)) await setMsLevelFilter(Number(v.ms));
-      // Selection unless explicitly landing on the chromatograms tab.
+      // Selection unless explicitly landing on the chromatograms tab. (Loaded
+      // before the preloader starts — see deferPreload above.)
       if (v.tab !== "chromatograms") {
         if (v.scan != null) await selectByScanNumber(Number(v.scan));
         else if (v.spectrum != null && /^\d+$/.test(v.spectrum)) await selectSpectrum(Number(v.spectrum));
+        // Restore the spectrum m/z zoom after the spectrum has loaded.
+        if (v.mz != null) {
+          const [lo, hi] = v.mz.split(",").map(Number);
+          if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) setSpectrumZoom([lo, hi]);
+        }
       }
       // Chromatogram unless explicitly landing on the spectra tab.
       if (v.tab !== "spectra") {
@@ -144,8 +155,10 @@ export function App() {
         } else if (v.chrom === "tic") await showTic();
         else if (v.chrom != null) await showStoredChromatogram(v.chrom);
       }
+      // The deep-linked target is in view — now let buffering begin.
+      startPreload();
     })();
-  }, [stage, setTab, setMsLevelFilter, selectByScanNumber, selectSpectrum, runXic, showTic, showStoredChromatogram]);
+  }, [stage, setTab, setMsLevelFilter, selectByScanNumber, selectSpectrum, runXic, showTic, showStoredChromatogram, setSpectrumZoom, startPreload]);
 
   const [copied, setCopied] = useState(false);
   function shareView() {
@@ -164,6 +177,7 @@ export function App() {
       chromMode: s.chromMode,
       xic: s.xicParams ? { mz: s.xicParams.mz, tolDa: s.xicParams.tolDa } : null,
       chromStoredId: s.chromStoredId,
+      spectrumZoom: s.spectrumZoom,
     };
     const link = buildShareUrl(view, window.location.origin, window.location.pathname);
     void navigator.clipboard?.writeText(link).then(() => {
