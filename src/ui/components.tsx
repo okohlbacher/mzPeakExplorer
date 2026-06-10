@@ -5,6 +5,7 @@ import {
   useState,
   type ChangeEvent,
   type CSSProperties,
+  type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -300,6 +301,7 @@ export function TextField({
   value,
   onChange,
   onKeyDown,
+  onBlur,
   type = "text",
   placeholder,
   suffix,
@@ -314,6 +316,7 @@ export function TextField({
   value: string | number;
   onChange: (e: ChangeEvent<HTMLInputElement>) => void;
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onBlur?: (e: FocusEvent<HTMLInputElement>) => void;
   type?: "text" | "number";
   placeholder?: string;
   suffix?: ReactNode;
@@ -353,7 +356,10 @@ export function TextField({
           step={step}
           disabled={disabled}
           onFocus={() => setFocus(true)}
-          onBlur={() => setFocus(false)}
+          onBlur={(e) => {
+            setFocus(false);
+            onBlur?.(e);
+          }}
           style={{
             border: "none",
             outline: "none",

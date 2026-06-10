@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../state/store";
 import { SpectrumPlot } from "./SpectrumPlot";
 import { TreeView } from "./TreeView";
@@ -81,6 +81,11 @@ export function SpectraTab() {
   const spectrumZoom = useStore((s) => s.spectrumZoom);
   const setSpectrumZoom = useStore((s) => s.setSpectrumZoom);
 
+  // The spectrum-number field commits on Enter/blur (not on every keystroke),
+  // so typing e.g. "10000" fires ONE load, not five — each cold spectrum read
+  // over HTTP is a ~12 MB row group (see the navigation perf analysis).
+  const [posDraft, setPosDraft] = useState<string | null>(null);
+
   // Reporter-ion quant overlay: only when the file has isobaric channels and the
   // selected spectrum (MSn≥2) actually contains the reporter ions.
   const { reporters, matched } = useMemo(
@@ -132,6 +137,16 @@ export function SpectraTab() {
     : selectedIndex ?? 0;
   const navDisabled = resolving || noMatches;
 
+  // Commit the typed spectrum position (Enter/blur) → exactly one load.
+  const commitPos = () => {
+    if (posDraft == null) return;
+    const v = Number(posDraft);
+    setPosDraft(null);
+    if (!Number.isFinite(v) || v < 0 || v >= total) return;
+    if (usingFilter) void selectSpectrum(filtered![v].index);
+    else if (!filtering) void selectSpectrum(v);
+  };
+
   const repr = selectedSpectrum?.representation;
   const reprHint =
     repr === "centroid"
@@ -147,7 +162,7 @@ export function SpectraTab() {
           <Button
             size="sm"
             disabled={navDisabled || pos <= 0}
-            onClick={() => void stepSpectrum(-1)}
+            onClick={() => { setPosDraft(null); void stepSpectrum(-1); }}
           >
             ‹ Prev
           </Button>
@@ -157,25 +172,22 @@ export function SpectraTab() {
             width="5rem"
             min={0}
             max={Math.max(0, total - 1)}
-            value={navDisabled ? 0 : pos}
+            value={navDisabled ? 0 : posDraft ?? pos}
             disabled={navDisabled}
             suffix={`of ${Math.max(0, total - 1)}`}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (!usingFilter && !filtering) {
-                if (!Number.isFinite(v) || v < 0 || v >= total) return;
-                void selectSpectrum(v);
-                return;
+            onChange={(e) => setPosDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commitPos();
+                (e.target as HTMLInputElement).blur();
               }
-              if (!usingFilter) return;
-              if (!Number.isFinite(v) || v < 0 || v >= total) return;
-              void selectSpectrum(filtered![v].index);
             }}
+            onBlur={commitPos}
           />
           <Button
             size="sm"
             disabled={navDisabled || pos >= total - 1}
-            onClick={() => void stepSpectrum(1)}
+            onClick={() => { setPosDraft(null); void stepSpectrum(1); }}
           >
             Next ›
           </Button>

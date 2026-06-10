@@ -98,6 +98,11 @@ saveSettings(initialSettings); // persist a URL-preset for the rest of the sessi
 let cacheBudgetBytes = initialSettings.cacheMB * 1024 * 1024;
 let preloadEnabled = initialSettings.preload;
 let preloadRunning = false;
+// Remote (HTTP) files do NOT background-preload automatically: every cold
+// spectrum read is a large row-group range request, so eagerly fetching all
+// spectra saturates the connection and starves foreground navigation. The user
+// can still force it on via the Settings gear (setSettings bypasses this).
+let remoteSource = false;
 
 function specBytes(s: SpectrumArrays): number {
   return s.mz.byteLength + s.intensity.byteLength;
@@ -556,7 +561,9 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   startPreload() {
-    if (reader && get().stage === "ready") {
+    // Honors the remote-source policy: deep links to remote files load the target
+    // spectrum but do not kick off background buffering (use the gear to force it).
+    if (reader && !remoteSource && get().stage === "ready") {
       void preloadInBackground(set, get, reader, loadGen);
     }
   },
@@ -592,6 +599,7 @@ async function load(
   deferPreload = false,
 ): Promise<void> {
   const gen = ++loadGen;
+  remoteSource = sourceUrl != null; // remote files skip the automatic preloader
   scanInFlight = null; // any prior scan is now stale (it bails on the gen check)
   resetSpecCache(); // drop the previous file's cached spectra
   // Preserve the user's tab + cache settings across loads (don't reset them).
@@ -641,9 +649,11 @@ async function load(
     // Background warm-up: now that the overview is on screen, preload the TIC and
     // as many spectrum signal arrays as fit in the memory budget, so the Spectra
     // and Chromatograms tabs are already buffered when the user gets there.
-    // Deferred for deep links with a spectrum target: the App loads that spectrum
-    // first (so it isn't stuck behind the preloader over HTTP), then startPreload().
-    if (summary.numSpectra > 0 && !deferPreload) void preloadInBackground(set, get, opened, gen);
+    // Skipped for remote files (see remoteSource) and deferred for deep links
+    // with a spectrum target (the App loads that spectrum first, then startPreload()).
+    if (summary.numSpectra > 0 && !deferPreload && !remoteSource) {
+      void preloadInBackground(set, get, opened, gen);
+    }
   } catch (err) {
     if (gen !== loadGen) return;
     reader = null;
