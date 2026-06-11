@@ -6,6 +6,7 @@ import { computeFastSummary, scanSpectra } from "../reader/summary";
 import { listArchive, readParquetInfo, readArchiveMember } from "../reader/archive";
 import { readStudyMetadata } from "../reader/sampleMeta";
 import { deepColumn, sampleColumnNumbers } from "../reader/parquetDeep";
+import { priorityRead, backgroundRead, userIsActive, PRELOAD_COOLDOWN_MS } from "./readScheduler";
 import {
   chromatogramIds,
   extractChromatogram,
@@ -97,7 +98,10 @@ const initialSettings = loadSettings();
 saveSettings(initialSettings); // persist a URL-preset for the rest of the session
 let cacheBudgetBytes = initialSettings.cacheMB * 1024 * 1024;
 let preloadEnabled = initialSettings.preload;
-let preloadRunning = false;
+// The load generation whose preloader is currently running (null = none). Scoped
+// by gen — not a bare boolean — so opening a new file can start its own preloader
+// even while a previous gen's preloader is still unwinding its last in-flight read.
+let preloadGen: number | null = null;
 // Remote (HTTP) files do NOT background-preload automatically: every cold
 // spectrum read is a large row-group range request, so eagerly fetching all
 // spectra saturates the connection and starves foreground navigation. The user
@@ -111,6 +115,7 @@ function specBytes(s: SpectrumArrays): number {
 function resetSpecCache(): void {
   specCache = new Map();
   specCacheBytes = 0;
+  inflightSpectra.clear();
 }
 
 /** Evict oldest cached spectra until within the current budget (keeps ≥1). */
@@ -123,19 +128,13 @@ function evictToBudget(): void {
   }
 }
 
-// All signal reads (spectrum arrays, XIC/TIC extraction) go through one queue so
-// the background preloader never reads the vendored reader concurrently with a
-// user-triggered read — the reader is not assumed reentrant. Cache hits bypass
-// this entirely, so once preloaded, navigation stays instant.
-let readChain: Promise<unknown> = Promise.resolve();
-function serialRead<T>(fn: () => Promise<T>): Promise<T> {
-  const run = readChain.then(fn, fn);
-  readChain = run.then(
-    () => {},
-    () => {},
-  );
-  return run;
-}
+// All signal reads (spectrum arrays, XIC/TIC extraction) go through the read
+// scheduler so the vendored reader is never invoked reentrantly. Reads run on two
+// lanes: user-triggered `priorityRead`s preempt the background preloader's
+// `backgroundRead`s, so navigation never waits behind speculative buffering
+// (beyond at most one already-in-flight read — the reader has no AbortSignal).
+// Cache hits bypass the scheduler entirely, so once preloaded navigation is
+// instant. See ./readScheduler for the full rationale.
 
 /** Insert (or refresh) a spectrum, evicting the oldest entries past the budget. */
 function cacheSpectrum(index: number, s: SpectrumArrays): void {
@@ -147,6 +146,41 @@ function cacheSpectrum(index: number, s: SpectrumArrays): void {
   specCache.set(index, s); // newest → last, so eviction (oldest-first) spares it
   specCacheBytes += specBytes(s);
   evictToBudget();
+}
+
+// Coalesce concurrent reads of the SAME spectrum: if the preloader is already
+// fetching an index when the user navigates to it (or vice-versa), the second
+// caller piggybacks on the in-flight promise instead of issuing a duplicate
+// row-group request. Keyed by index; an entry self-removes when it settles.
+const inflightSpectra = new Map<number, Promise<SpectrumArrays | null>>();
+
+/**
+ * Read a spectrum's arrays through the scheduler, with in-flight de-duplication
+ * and two safety re-checks evaluated when the scheduled slot actually starts
+ * (it may have been queued behind an in-flight read for a while):
+ *   • returns `null` if a newer file superseded this one (stale `gen`) — so the
+ *     caller skips reader I/O on a torn-down file rather than erroring;
+ *   • returns the cached copy if a peer read populated it while we waited.
+ * `lane` is `priorityRead` (user) or `backgroundRead` (preloader).
+ */
+function readSpectrumArrays(
+  r: Reader,
+  index: number,
+  gen: number,
+  lane: typeof priorityRead,
+): Promise<SpectrumArrays | null> {
+  const existing = inflightSpectra.get(index);
+  if (existing) return existing;
+  const p = lane(async () => {
+    if (gen !== loadGen) return null; // a newer file loaded while we were queued
+    const cached = specCache.get(index);
+    if (cached) return cached; // a peer read already fetched it
+    return await getSpectrumArrays(r, index);
+  }).finally(() => {
+    if (inflightSpectra.get(index) === p) inflightSpectra.delete(index);
+  });
+  inflightSpectra.set(index, p);
+  return p;
 }
 
 export type Tab = "summary" | "metadata" | "spectra" | "chromatograms" | "structure";
@@ -334,11 +368,16 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       // Cache miss: metadata is instant; show the spinner while the signal loads.
       set({ selectedIndex: index, spectrumLoading: true, selectedMeta: meta, selectedSpectrum: null, error: null, spectrumZoom: null });
-      const spectrum = await serialRead(() => getSpectrumArrays(r, index));
-      cacheSpectrum(index, spectrum);
-      // Ignore if a newer file loaded or the user moved on meanwhile.
-      if (gen === loadGen && get().selectedIndex === index) {
+      const spectrum = await readSpectrumArrays(r, index, gen, priorityRead);
+      // Discard if a newer file loaded while we read — caching it would poison the
+      // new file's index-keyed cache (a later hit could show old-file arrays).
+      if (gen !== loadGen || spectrum == null) return;
+      cacheSpectrum(index, spectrum); // same file → keep cached even if the user moved on
+      // Only repaint if this spectrum is still the selected one.
+      if (get().selectedIndex === index) {
         set({ selectedSpectrum: spectrum, spectrumLoading: false, buffered: specCache.size });
+      } else {
+        set({ buffered: specCache.size });
       }
     } catch (err) {
       // A spectrum that can't be decoded (e.g. an unsupported array compression)
@@ -428,7 +467,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       if (!get().scanned) await get().computeBreakdown();
       if (gen !== loadGen) return; // a newer file loaded
       const useProfile = (get().summary?.representationCounts.centroid ?? 0) === 0;
-      const points = await serialRead(() => extractChromatogram(r, { mz, tolDa, useProfile }));
+      const points = await priorityRead(() => extractChromatogram(r, { mz, tolDa, useProfile }));
       if (gen !== loadGen) return;
       set({ chrom: points, chromLoading: false, error: null });
     } catch (err) {
@@ -749,8 +788,8 @@ async function preloadInBackground(
   r: Reader,
   gen: number,
 ): Promise<void> {
-  if (!preloadEnabled || preloadRunning) return; // disabled, or already warming
-  preloadRunning = true;
+  if (!preloadEnabled || preloadGen === gen) return; // disabled, or already warming this gen
+  preloadGen = gen;
   try {
     // Index + TIC first (so Chromatograms is buffered). ensureScan dedupes with
     // the auto-scan; for large files this triggers the (fast) column scan in bg.
@@ -766,24 +805,37 @@ async function preloadInBackground(
       (a, b) => Math.abs(a - sel) - Math.abs(b - sel),
     );
 
-    // Single sequential pass: all reads go through serialRead anyway, and a
-    // user-triggered read interleaves naturally (its cache miss queues one slot).
+    // Single sequential pass on the background lane. A user-triggered read
+    // (priorityRead) preempts any not-yet-started preload read; and before each
+    // read we wait out `userIsActive()` so speculative buffering stays off the
+    // wire during active navigation — the key win on low-bandwidth links.
     for (const idx of order) {
       if (gen !== loadGen || !preloadEnabled) return; // superseded or turned off
       if (specCacheBytes >= cacheBudgetBytes) return; // budget reached
       if (specCache.has(idx)) continue;
+      // Yield to the user: pause while a user read is pending/in-flight or within
+      // the post-read cooldown, re-checking the cancel conditions each tick.
+      while (userIsActive()) {
+        if (gen !== loadGen || !preloadEnabled) return;
+        await new Promise<void>((res) => setTimeout(res, PRELOAD_COOLDOWN_MS));
+      }
+      if (specCache.has(idx)) continue; // may have been filled while we waited
       try {
-        const s = await serialRead(() => getSpectrumArrays(r, idx));
-        if (gen !== loadGen) return;
-        cacheSpectrum(idx, s);
-        if (gen === loadGen) set({ buffered: specCache.size });
+        const s = await readSpectrumArrays(r, idx, gen, backgroundRead);
+        // Re-check AFTER the await: a newer file, a preload toggle-off, or a
+        // shrunk cache budget during the read must all abort before we cache.
+        if (gen !== loadGen || !preloadEnabled || specCacheBytes >= cacheBudgetBytes) return;
+        if (s != null) {
+          cacheSpectrum(idx, s);
+          set({ buffered: specCache.size });
+        }
       } catch {
         // Skip spectra the reader can't decode — preloading must never error out.
       }
       await new Promise<void>((res) => setTimeout(res, 0)); // yield to the UI
     }
   } finally {
-    preloadRunning = false;
+    if (preloadGen === gen) preloadGen = null; // only the owner clears the slot
   }
 }
 
@@ -828,16 +880,20 @@ async function buildTic(
   if (cheap) return cheap;
   if (rows.length > AUTO_SCAN_LIMIT) return null; // too expensive to sum
   const useProfile = rows.some((row) => row.representation !== "centroid");
-  const all = await serialRead(() => extractChromatogram(r, { useProfile }));
+  const all = await priorityRead(() => extractChromatogram(r, { useProfile }));
   // Restrict the summed trace to MS1 spectra.
   const ms1 = new Set(rows.filter((row) => row.msLevel === 1).map((row) => row.index));
   return ms1.size > 0 ? all.filter((p) => ms1.has(p.index)) : all;
 }
 
-/** Read a stored chromatogram by index (used by the Browse stored-chrom picker). */
+/** Read a stored chromatogram by index (used by the Browse stored-chrom picker).
+ *  User-triggered, so it goes through the priority lane — both to preempt the
+ *  preloader and to keep this signal read from running the non-reentrant reader
+ *  concurrently with a background spectrum read. */
 export async function loadStoredChromatogram(index: number) {
-  if (!reader) return null;
-  return getStoredChromatogram(reader, index);
+  const r = reader;
+  if (!r) return null;
+  return priorityRead(() => getStoredChromatogram(r, index));
 }
 
 /** ZIP archive listing for the Structure tab (sync — entries are already loaded). */
