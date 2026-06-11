@@ -3,11 +3,11 @@ import { Download, Play, ShieldCheck } from "lucide-react";
 import { useStore } from "../state/store";
 import { Button, Logo } from "./components";
 
-/** Remote demo file (SCIEX TripleTOF 6600, ~145 MB) on StackIT object storage.
- *  Opened via HTTP range requests, so a visit transfers only the footer + the
- *  parts you view — not the whole file. */
+/** Remote demo file (SCIEX TripleTOF 6600, ~145 MB), served via the StackIT CDN
+ *  (BunnyCDN edge, HTTP/2) at data.mzpeak.org. Opened via HTTP range requests, so
+ *  a visit transfers only the footer + the parts you view — not the whole file. */
 export const DEMO_URL =
-  "https://object.storage.eu01.onstackit.cloud/v09/mzML-examples/sciex-tripletof-6600/12_80.mzpeak";
+  "https://data.mzpeak.org/v09/mzML-examples/sciex-tripletof-6600/12_80.mzpeak";
 const DEMO_FILENAME = "12_80.mzpeak";
 
 /**

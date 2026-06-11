@@ -1,7 +1,8 @@
 // The ONE module that imports `mzpeakts`. Everything else depends on the opaque
 // `Reader` handle re-exported here. `grep -rl "from \"mzpeakts\"" src/` must
 // return only this file.
-import { MzPeakReader } from "mzpeakts";
+import { MzPeakReader, ZipStorage } from "mzpeakts";
+import { HttpReader } from "@zip.js/zip.js";
 
 /**
  * Opaque reader handle. Concretely an mzpeakts `MzPeakReader`, but callers treat
@@ -28,7 +29,14 @@ export async function openBlob(blob: Blob): Promise<Reader> {
   return warm(await MzPeakReader.fromBlob(blob));
 }
 
-/** Open a `.mzpeak` from a URL (HTTP range requests via zip.js). */
+/** Open a `.mzpeak` from a URL (HTTP range requests via zip.js).
+ *
+ * Equivalent to `MzPeakReader.fromUrl(url)` but with `forceRangeRequests: true`:
+ * the CDN (data.mzpeak.org / BunnyCDN) serves correct 206 range responses but
+ * omits `Accept-Ranges` on them, which makes zip.js throw "HTTP Range not
+ * supported". Range demonstrably works (206 + Content-Range), so force it rather
+ * than probe for the missing advertisement header. */
 export async function openUrl(url: string | URL): Promise<Reader> {
-  return warm(await MzPeakReader.fromUrl(url));
+  const reader = new HttpReader(String(url), { useRangeHeader: true, forceRangeRequests: true });
+  return warm(await MzPeakReader.fromStore(new ZipStorage(reader)));
 }
