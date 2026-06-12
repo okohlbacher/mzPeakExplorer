@@ -41,6 +41,7 @@ All params are optional except `file`. Short links: **only non-default state is 
 | `scan` | selected spectrum by **native scan number** (existing) | `scan=229` | preferred — stable across re-conversions |
 | `spectrum` | selected spectrum by **0-based index** (fallback) | `spectrum=2` | used only when the id has no `scan=N` (e.g. imaging) |
 | `ms` | MS-level filter | `ms=2` | omitted when no filter |
+| `mz` | **spectrum** m/z zoom window | `mz=126,131.2` | `lo,hi`; applied only with a selected spectrum (emitted only when zoomed in) |
 | `chrom` | chromatogram view | `chrom=tic` / `chrom=BasePeak_0` | `tic` ⇒ TIC; otherwise stored-chromatogram index/id (existing semantics) |
 | `xic` | XIC by **centre + delta** | `xic=445.12,0.01` | `mz,delta` (delta = ± half-window); takes precedence over `chrom` |
 | `xicmz` | XIC by **m/z range** | `xicmz=445.0,445.3` | `lo,hi`; alternative to `xic` (normalised to centre+delta); takes precedence over `xic` |
@@ -138,9 +139,10 @@ In `App.tsx`'s header-right cluster (where "Copy link" is today), shown when `re
   {copied ? "Copied" : "Share view"}
 </Button>
 ```
-`shareView()` = `serializeView(useStore.getState())` → `navigator.clipboard.writeText(link)` → flash
-"Copied" for ~1.8 s (reuse the existing `copied` state + timer). On clipboard failure (or
-non-secure-context), fall back to a tiny popover showing the selectable link.
+**As implemented:** `shareView()` = `serializeView(useStore.getState())` →
+`navigator.clipboard?.writeText(link)` → flash "Copied" for ~1.8 s (the `copied` state + timer). The
+write is optional-chained, so on a non-secure context / missing clipboard it silently no-ops (no
+popover fallback was built).
 
 **Placement note.** The user asked for it "at all times on the right-hand side." The header-right
 cluster satisfies that and matches the existing affordance. Optional enhancement: a small floating
@@ -196,11 +198,14 @@ bare `?file=`); assert `scan` preferred over `spectrum` when the id carries a sc
 
 ---
 
-## 9. Open questions
+## 9. Decisions as shipped
 
-1. **Button label/icon** — "Share view" (Share2) vs keep "Copy link" wording? (Recommend "Share view".)
-2. **Live address-bar sync** (§5.1) — include now (off by default toggle) or defer? (Recommend defer.)
-3. **Structure-tab state** (which parquet member / expanded deep-column) — worth encoding, or treat as
-   ephemeral? (Recommend ephemeral for v1.)
-4. **Replace vs add** — repurpose the existing "Copy link" button, or keep both ("Copy link" = file
-   only, "Share view" = full state)? (Recommend replace — one button, full state.)
+The design questions below were resolved during implementation:
+
+1. **Button** — a single **"Share view"** button (Share2 icon), shown only for URL-loaded datasets;
+   it copies the full-state link (no separate "Copy link").
+2. **Live address-bar sync** (§5.1) — deferred; the URL is written only on an explicit Share click.
+3. **Structure-tab state** (selected parquet member / expanded deep-column) — treated as ephemeral,
+   not encoded. Likewise metadata-tree expansion and settings.
+4. **On-the-fly chromatograms** — `xicmz` and `rt` were added later so a chromatogram can be computed
+   straight from a hand-authored link (see §2).

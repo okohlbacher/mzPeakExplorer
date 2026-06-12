@@ -9,8 +9,8 @@ Everything runs **client-side** — no upload, no backend. Local files are read 
 their bytes never leave the browser; remote files are streamed with HTTP range requests, so
 opening one transfers only the parts you actually look at.
 
-**Try it:** primary resolver **<https://www.mzpeak.org/view/>** · GitHub Pages mirror
-<https://okohlbacher.github.io/mzPeakExplorer/>. Click **Open demo** for a ~145 MB SCIEX
+**Try it:** the primary resolver is **<https://www.mzpeak.org/view/>** (GitHub Pages mirror:
+<https://okohlbacher.github.io/mzPeakExplorer/>). Click **Open demo** for a ~145 MB SCIEX
 TripleTOF dataset streamed from the CDN.
 
 ![Summary overview with embedded SDRF study metadata and TMT channel assignments](docs/images/summary-study.png)
@@ -93,10 +93,11 @@ https://www.mzpeak.org/view/?file=<dataset-url>&xicmz=445.0,445.3      # XIC ove
 https://www.mzpeak.org/view/?file=<dataset-url>&chrom=tic&rt=120,600   # TIC over an RT window (s)
 ```
 
-The first link, pointed at the bundled SCIEX TripleTOF demo, resolves on load to its
-extracted-ion chromatogram — the recipient lands here, no clicks:
+Point the first link's `<dataset-url>` at the demo dataset (the remote SCIEX TripleTOF file behind
+**Open demo**) and it resolves on load straight to its extracted-ion chromatogram — the recipient
+lands here, no clicks:
 
-![A shared `?file=…&xic=445.15,0.15` link resolved to the extracted-ion chromatogram](docs/images/share-view-resolved.png)
+![A shared `?file=…&xicmz=445.0,445.3` link resolved to the extracted-ion chromatogram](docs/images/share-view-resolved.png)
 
 | Parameter | Value | Meaning |
 |---|---|---|
@@ -136,10 +137,11 @@ npm run build    # tsc -b && vite build → dist/   (set VITE_BASE=/sub-path/ fo
 npm run test     # vitest
 ```
 
-The app is a fully static SPA — no backend, no secrets. It deploys automatically to **GitHub Pages**
-on every push to `main` ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) and to
-**`mzpeak.org/view`** via the combined-site build + rsync (see [`CLAUDE.md`](CLAUDE.md)). The vendored
-`mzpeakts` reader is committed in-tree, so CI needs no submodule.
+The app is a fully static SPA — no backend, no secrets. It deploys to **GitHub Pages** automatically
+on every push to `main` ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)); the
+**`mzpeak.org/view`** instance is published separately via the combined-site build + rsync (see
+[`CLAUDE.md`](CLAUDE.md)). The vendored `mzpeakts` reader is committed in-tree, so CI needs no
+submodule.
 
 Internals — the `src/reader/` boundary, the vendored `mzpeakts` + `parquet-wasm` stack, the state
 store, the prioritized read scheduler, and the lazy chart wiring — are documented in
