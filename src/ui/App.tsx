@@ -171,7 +171,14 @@ export function App() {
       const applyChrom = async () => {
         const rt = parsePair(v.rt); // RT window (seconds) — applies to TIC or XIC
         const range = parsePair(v.xicmz); // explicit m/z range, validated + ascending
-        if (range) { await runXic((range[0] + range[1]) / 2, (range[1] - range[0]) / 2, rt); return; }
+        if (range) {
+          // Convert the range to centre + half-window, rounding off binary-float
+          // noise (e.g. (445.3-445.0)/2 = 0.150000…0568) so the XIC label and the
+          // re-shared xic= link stay clean.
+          const round6 = (x: number) => Math.round(x * 1e6) / 1e6;
+          await runXic(round6((range[0] + range[1]) / 2), round6((range[1] - range[0]) / 2), rt);
+          return;
+        }
         if (v.xic != null) {
           const [mz, tol] = v.xic.split(",").map(Number);
           if (Number.isFinite(mz) && Number.isFinite(tol) && tol > 0) { await runXic(mz, tol, rt); return; }

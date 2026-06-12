@@ -37,11 +37,14 @@ export function ChromatogramsTab() {
   const selRow = selectedIndex != null ? spectra[selectedIndex] : undefined;
   const selTime = selectedSpectrum?.time ?? selRow?.time ?? null;
 
+  // Trim binary-float noise (e.g. 0.150000…0568) from displayed m/z values without
+  // losing real precision.
+  const fmtMz = (x: number) => String(Number(x.toFixed(6)));
   const chromTitle =
     chromMode === "stored"
       ? `Chromatogram — ${chromStoredId ?? "stored"}`
       : chromMode === "xic" && xicParams
-        ? `XIC — m/z ${xicParams.mz} ± ${xicParams.tolDa}`
+        ? `XIC — m/z ${fmtMz(xicParams.mz)} ± ${fmtMz(xicParams.tolDa)}`
         : "Total ion chromatogram (MS1)";
 
   function submitXic() {
