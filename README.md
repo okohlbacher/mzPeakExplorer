@@ -1,133 +1,149 @@
 # mzPeak Explorer
 
 A lightweight, **browser-based** explorer for [mzPeak](https://github.com/HUPO-PSI/mzPeak)
-mass-spectrometry files. Think of it as an interactive, web-native [OpenMS
-`FileInfo`](https://openms.de/) — open a `.mzpeak` file and immediately see what's
-inside it, browse its metadata, and page through spectra and chromatograms.
+mass-spectrometry files — a web-native, interactive take on OpenMS `FileInfo`. Open a
+`.mzpeak` file and immediately see what's inside: an overview, a metadata browser, a
+spectrum / chromatogram navigator, and the archive's internal structure.
 
-Everything runs **client-side**: no upload, no backend. The file's bytes never
-leave the browser (local files are read in place; URLs are fetched with HTTP
-range requests). It deploys as a static site.
+Everything runs **client-side** — no upload, no backend. Local files are read in place and
+their bytes never leave the browser; remote files are streamed with HTTP range requests, so
+opening one transfers only the parts you actually look at.
 
-**Live demo:** https://okohlbacher.github.io/mzPeakExplorer/
+**Try it:** primary resolver **<https://www.mzpeak.org/view/>** · GitHub Pages mirror
+<https://okohlbacher.github.io/mzPeakExplorer/>. Click **Open demo** for a ~145 MB SCIEX
+TripleTOF dataset streamed from the CDN.
 
-Opening a file reads **metadata and table counts only** — the overview appears in
-a couple of seconds even for multi-gigabyte files. Per-spectrum aggregates
-(MS-level breakdown, m/z & RT ranges) and the chromatogram index are computed
-**on demand** ("Compute breakdown" / "Build TIC"), time-sliced so the UI never
-freezes.
+![Summary overview with embedded SDRF study metadata and TMT channel assignments](docs/images/summary-study.png)
 
 ## What it does
 
-Three tabs, all driven from a single in-browser read of the file:
+Five tabs, all driven from a single in-browser read of the file.
 
-- **Summary** — a `FileInfo`-style readout: spectrum / chromatogram / entity
-  counts, MS-level breakdown, profile-vs-centroid split, m/z and retention-time
-  ranges, storage layout (point / chunked), array encodings, and the file's
-  entity manifest. For **imaging (MSI)** archives it additionally shows the
-  imaging block — pixel grid + provenance, pixel size, scan geometry (with
-  friendly IMS term names), coordinate base, and a table of any embedded
-  **optical image** files (source, archive path, dimensions, type, size).
-- **Metadata** — the full file-level metadata (`fileDescription`, instrument
-  configurations, software, data processing, run, samples, and the
-  `mzpeak_index.json` discovery block) rendered as a **hierarchical, collapsible
-  tree** with CV-accession-aware highlighting.
-- **Browse** — a navigator for the signal data. A **chromatogram** strip (total
-  ion current, or an extracted-ion chromatogram for an m/z window you specify)
-  sits on top; click anywhere on it to jump to the nearest spectrum. The
-  selected **spectrum** is plotted below — profile spectra as a line, centroid
-  spectra as a stick spectrum — with **wheel/box zoom, pan, peak labels, and a
-  hover readout**. Navigation can be **filtered by MS level** (MS1/2/3…), and a
-  collapsible **per-spectrum metadata** tree shows that scan's CV params, scans,
-  precursors, and promoted columns.
+- **Summary** — a `FileInfo`-style readout: spectrum / chromatogram / entity counts, MS-level
+  breakdown, profile-vs-centroid split, m/z and RT ranges, storage layout, array encodings, and the
+  entity manifest. When the archive embeds study metadata it also shows **Study & samples** — the
+  SDRF/ISA accession, sample/channel counts, and a run-scoped **channel-assignment** table (reporter
+  m/z ↔ sample ↔ role ↔ label) decoded from the file's encoded index. **Imaging (MSI)** archives add
+  the imaging block (pixel grid, geometry, optical images). *(screenshot above)*
+- **Metadata** — the full file-level metadata (`fileDescription`, instrument, software, data
+  processing, run, samples, and the `mzpeak_index.json` block) as a collapsible, CV-accession-aware
+  tree.
+- **Spectra** — page through spectra (profile drawn as a line, centroid as a stick spectrum) with
+  wheel/box zoom, pan, peak labels, and a hover readout; filter by MS level; expand a per-spectrum
+  metadata tree. For isobaric (**TMT / iTRAQ**) datasets it marks the **reporter ions** on the plot
+  and shows per-channel **quant pills** extracted from the spectrum.
 
-## Design
+  ![MS² spectrum zoomed to the TMT reporter region with reporter-ion quant pills](docs/images/spectra-reporters.png)
+- **Chromatograms** — a **TIC** (from the promoted per-spectrum column) or an **extracted-ion
+  chromatogram** for an m/z window you specify; click anywhere on it to jump to the nearest spectrum.
 
-The UI follows the **OpenMS** visual identity: a slim persistent app shell (top
-bar + fixed nav rail with a pinned file inspector) wrapping a scrolling main
-pane, OpenMS electric-blue accent, IBM Plex Sans/Mono, and a dark "data stage"
-(`#0e1216` + dot-grid) for the Browse charts. Tokens live in
-[`src/ui/tokens/`](src/ui/tokens); primitives in
-[`src/ui/components.tsx`](src/ui/components.tsx).
+  ![Total-ion chromatogram with the XIC m/z controls](docs/images/chromatogram-tic.png)
+- **Structure** — the archive itself: every ZIP member (Parquet tables with row-group/column sizes
+  and codecs, the embedded SDRF/ISA, optical images, and any other attachments), each openable or
+  downloadable.
 
-## Stack
+  ![Structure tab listing the archive's Parquet tables and embedded SDRF](docs/images/structure.png)
 
-- **Vite 8 + React 19 + TypeScript** — static-deployable SPA.
-- **[uPlot](https://github.com/leeoniya/uPlot)** — fast canvas charts for dense
-  spectra and chromatograms (re-themed for the dark stage in
-  [`src/ui/chartTheme.ts`](src/ui/chartTheme.ts)).
-- **zustand** — small state store.
-- **IBM Plex Sans/Mono** (self-hosted via `@fontsource`) + **lucide-react** icons.
-- **[`mzpeakts`](https://github.com/HUPO-PSI/mzpeakts)** (vendored) — the browser
-  mzPeak reader (`parquet-wasm` + `apache-arrow` + `zip.js`). It is the only
-  dependency that touches the (explicitly unstable) on-disk format; the entire
-  rest of the app talks to it through the thin boundary in [`src/reader/`](src/reader).
+## Opening a file & how it loads
 
-The reader is vendored under [`vendor/mzpeakts/`](vendor/mzpeakts). Vite is
-pointed at its TypeScript source so the `parquet-wasm` binary is emitted as a
-separate hashed `.wasm` asset rather than inlined.
+Drop or **browse** a local file, click **Open demo**, or paste a dataset URL (the URL box starts
+empty). Three small files ship under [`public/static/`](public/static) — `small.mzpeak`,
+`small.chunked.mzpeak`, and `imaging-demo.mzpeak` (an MSI file with an optical image) — for local
+and static-site testing.
 
-## Develop
+![The idle start screen — drop-zone, privacy note, demo, and URL box](docs/images/starting-page.png)
+
+Opening a file reads **metadata and table counts only**, so the overview appears in a couple of
+seconds even for multi-gigabyte files. From there:
+
+- files up to ~50k spectra **auto-compute** the per-spectrum breakdown (MS levels, m/z & RT ranges)
+  and a cheap TIC in the background;
+- **local** sessions additionally background-preload spectra so navigation stays instant;
+- **large remote** files wait for an explicit action (**Compute breakdown**, **Build TIC**, or just
+  opening the Spectra tab) so a deep look at one file never eagerly pulls the whole thing.
+
+An unsupported array compression fails for that spectrum only — the file stays open so Summary,
+Metadata, and Structure keep working.
+
+## Data sharing
+
+Every view of a **cloud-hosted** dataset can be turned into a link that reproduces it. The app is a
+*resolver*: the primary analysis state lives in the URL's query string, so opening a link re-fetches
+the dataset and replays the view.
+
+**The "Share view" button.** While exploring a dataset you opened **from a URL**, a **Share view**
+button appears in the top bar; one click copies a link that restores the dataset, the active tab,
+the selected spectrum (by its native scan number when it has one), the MS-level filter, the
+spectrum's m/z zoom, and the current TIC / XIC / stored chromatogram. It intentionally does **not**
+capture incidental UI state (metadata-tree or Structure expansion, settings, in-progress fields), and
+an XIC is always shared as `xic=mz,delta`. Links point back at the instance you're using.
+
+![The Share view button in the top bar — shown only for datasets opened from a URL](docs/images/share-view-button.png)
+
+> **Local files can't be shared** — their bytes never leave your browser, so there's no URL to put in
+> a link, and the button only appears for URL-loaded datasets. To make a dataset shareable, host the
+> `.mzpeak` somewhere reachable over HTTP with **CORS** and **byte-range** support (e.g. the project
+> CDN, `data.mzpeak.org`).
+
+**Hand-authored links.** You don't need the button — any link with the right parameters resolves to
+the matching view, and a few parameters **compute a chromatogram on load**:
+
+```
+https://www.mzpeak.org/view/?file=<dataset-url>&xicmz=445.0,445.3      # XIC over an m/z range
+https://www.mzpeak.org/view/?file=<dataset-url>&chrom=tic&rt=120,600   # TIC over an RT window (s)
+```
+
+The first link, pointed at the bundled SCIEX TripleTOF demo, resolves on load to its
+extracted-ion chromatogram — the recipient lands here, no clicks:
+
+![A shared `?file=…&xic=445.15,0.15` link resolved to the extracted-ion chromatogram](docs/images/share-view-resolved.png)
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| `file` (alias `url`) | absolute `http(s)` URL | **required** — the `.mzpeak` to open (the host needs CORS + byte-range; URL-encode the value if it contains `?`/`&`) |
+| `tab` | `summary` \| `metadata` \| `spectra` \| `chromatograms` \| `structure` | which tab to show |
+| `scan` | integer | select the spectrum with this **native scan number** (preferred — stable) |
+| `spectrum` | integer | select by **0-based index** (fallback, e.g. imaging) |
+| `ms` | integer | restrict spectrum navigation to this MS level |
+| `mz` | `lo,hi` | zoom the **spectrum** plot to this m/z window (needs a selected spectrum) |
+| `chrom` | `tic` \| `<stored-id\|index>` | show the **TIC**, or a **stored** chromatogram by its id or 0-based index |
+| `xic` | `mz,delta` | **extracted-ion** chromatogram centred at `mz`, ± `delta` (half-window) |
+| `xicmz` | `lo,hi` | extracted-ion chromatogram over an explicit **m/z range** |
+| `rt` | `start,end` | restrict the TIC/XIC to a **retention-time window** (seconds) |
+
+A **TIC** needs only `chrom=tic` (optionally `&rt=`); an **XIC** needs an m/z window — a range
+(`xicmz`) or centre + delta (`xic`) — plus an optional `rt`. **Precedence:** `xicmz` > `xic` >
+`chrom`, and `scan` > `spectrum`. An explicit `tab=` always wins; otherwise a chromatogram parameter
+lands on **Chromatograms** and a spectrum parameter on **Spectra**. When both are given, both are
+applied — the chromatogram shows first, but the spectrum stays selected, so switching to Spectra
+shows it. Generated links are **best-effort**: a request the file can't satisfy (e.g. a TIC for a
+huge file with no promoted column) is ignored or surfaces a clear error rather than breaking.
+
+Full schema in [`docs/share-view-deep-link-SPEC.md`](docs/share-view-deep-link-SPEC.md).
+
+## Settings
+
+A **gear** menu in the top bar toggles the background **preload** and sets the in-memory spectrum
+**cache budget**. Both can be preset from the URL: `?preload=0` disables preloading, `?cacheMB=512`
+sets the cache size.
+
+## Develop & deploy
 
 ```bash
 npm install
-npm run dev      # http://localhost:5188
+npm run dev      # http://localhost:5188   (pinned port; strictPort)
+npm run build    # tsc -b && vite build → dist/   (set VITE_BASE=/sub-path/ for a project page)
+npm run test     # vitest
 ```
 
-(The dev port is pinned to **5188** in `vite.config.ts` so it won't collide with
-other Vite projects that default to 5173.)
+The app is a fully static SPA — no backend, no secrets. It deploys automatically to **GitHub Pages**
+on every push to `main` ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) and to
+**`mzpeak.org/view`** via the combined-site build + rsync (see [`CLAUDE.md`](CLAUDE.md)). The vendored
+`mzpeakts` reader is committed in-tree, so CI needs no submodule.
 
-A couple of small demo files ship under [`public/static/`](public/static)
-(including `imaging-demo.mzpeak`, which carries an imaging block + an optical
-image so the imaging UI can be exercised); the URL box is pre-filled with one.
+Internals — the `src/reader/` boundary, the vendored `mzpeakts` + `parquet-wasm` stack, the state
+store, the prioritized read scheduler, and the lazy chart wiring — are documented in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Build & deploy
-
-```bash
-npm run build    # tsc -b && vite build  →  dist/
-npm run preview
-```
-
-`base` defaults to `/` (works in dev and at a domain root). For a GitHub Pages
-**project page**, build with the repo sub-path:
-
-```bash
-VITE_BASE=/mzPeakExplorer/ npm run build
-```
-
-### GitHub Pages (automated)
-
-The site deploys automatically via GitHub Actions on every push to `main` —
-see [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The workflow
-runs `npm ci && npm run build` with `VITE_BASE` derived from the repository name
-and publishes `dist/` to Pages. To enable it on a fresh fork: in **Settings →
-Pages**, set **Source** to **GitHub Actions**. No secrets are required; the
-build is fully static (no backend, no upload).
-
-The vendored reader is committed in-tree (`vendor/mzpeakts/lib`, just the source
-+ `.d.ts` + the `parquet-wasm` `.tgz`), so CI needs no submodule or build of the
-reader — `npm ci` resolves everything and `npm run build` produces the site.
-
-## Architecture notes
-
-- `src/reader/` is the **only** place `mzpeakts` is imported. Above it, the app
-  speaks plain types (`FileSummary`, `SpectrumArrays`, `ChromPoint`, …) — no
-  Arrow vectors and no `bigint` leak upward (`src/reader/plainify.ts` enforces
-  this at the boundary).
-- The live reader handle is held in a module variable, **outside** React state,
-  so React never diffs or re-renders against its large Arrow/WASM-backed
-  internals.
-- **Metadata-first loading:** opening a file reads *only* metadata (manifest,
-  file metadata, per-spectrum index, summary). Spectra and the TIC are loaded
-  lazily when the Browse tab is first opened. A total-ion chromatogram is shown
-  automatically only when it's available as a promoted per-spectrum column
-  (metadata-only); summing it from every spectrum is a whole-file read and
-  happens solely on an explicit **Build TIC** click.
-- The charts create their uPlot instance **lazily**, only once a `ResizeObserver`
-  reports the host has a real width — constructing uPlot at zero width (which
-  happens the moment a tab is first revealed) permanently breaks its scale
-  auto-ranging.
-
-mzPeak has **no stability guarantee** — the reader version-detects and the UI
-degrades gracefully (e.g. a chromatogram-only or non-imaging file just shows what
-it has).
+> mzPeak has **no stability guarantee**. The reader version-detects and the UI degrades gracefully —
+> a chromatogram-only or non-imaging file simply shows what it has.

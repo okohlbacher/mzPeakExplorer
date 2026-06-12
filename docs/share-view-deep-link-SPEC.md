@@ -1,13 +1,14 @@
-# DRAFT — "Share view" deep link (reproduce the current view from a URL)
+# "Share view" deep link (reproduce a view from a URL) — schema
 
-> **Status:** feature draft. A persistent **Share view** button (header right, when a
-> cloud-hosted dataset is open) that copies a deep link encoding the *full view state* — which
-> tab, which spectrum, which chromatogram, the MS-level filter — so a recipient opening the link
-> in the same mzPeakExplorer instance lands on exactly what the sharer sees.
+> **Status: implemented and shipped.** A persistent **Share view** button (header right, when a
+> cloud-hosted dataset is open) copies a deep link encoding the primary view state — which tab,
+> which spectrum, which chromatogram, the MS-level filter, the spectrum m/z zoom. The on-the-fly
+> chromatogram parameters (`xicmz`, `rt`) were added later. This document is the internal schema
+> reference; the user-facing overview lives in the [README's Data sharing section](../README.md).
 >
-> Builds directly on the existing deep-link machinery (`?file=` / `?scan=` / `?chrom=` in
-> `src/ui/App.tsx`, the `selectByScanNumber` / `showStoredChromatogram` store actions). This is an
-> *extension*, not a new subsystem.
+> Implemented across `src/ui/shareView.ts` (pure serialize/parse) and the deep-link apply effect in
+> `src/ui/App.tsx`, on top of the `selectByScanNumber` / `runXic` / `showTic` /
+> `showStoredChromatogram` store actions.
 
 ---
 
@@ -176,7 +177,7 @@ that the link includes the dataset URL.
 
 ---
 
-## 8. Files touched (when greenlit)
+## 8. Files touched (implemented)
 
 | File | Change |
 |---|---|
