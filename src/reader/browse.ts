@@ -186,7 +186,13 @@ export async function extractChromatogram(
     });
   }
   out.sort((a, b) => a.time - b.time);
-  return out;
+  // Always enforce the RT window locally with inclusive bounds: the reader's
+  // time→index range can over-include the first point past `end`, and an out-of-
+  // run window resolves to a null range (= the whole run) — both would otherwise
+  // leak points outside the requested window.
+  return timeRange
+    ? out.filter((p) => p.time >= timeRange[0] && p.time <= timeRange[1])
+    : out;
 }
 
 /** List + read stored chromatograms (e.g. the TIC the converter wrote). */

@@ -41,16 +41,29 @@ All params are optional except `file`. Short links: **only non-default state is 
 | `spectrum` | selected spectrum by **0-based index** (fallback) | `spectrum=2` | used only when the id has no `scan=N` (e.g. imaging) |
 | `ms` | MS-level filter | `ms=2` | omitted when no filter |
 | `chrom` | chromatogram view | `chrom=tic` / `chrom=BasePeak_0` | `tic` ⇒ TIC; otherwise stored-chromatogram index/id (existing semantics) |
-| `xic` | extracted-ion chromatogram | `xic=445.12,0.01` | `mz,tolDa`; takes precedence over `chrom` |
+| `xic` | XIC by **centre + delta** | `xic=445.12,0.01` | `mz,delta` (delta = ± half-window); takes precedence over `chrom` |
+| `xicmz` | XIC by **m/z range** | `xicmz=445.0,445.3` | `lo,hi`; alternative to `xic` (normalised to centre+delta); takes precedence over `xic` |
+| `rt` | restrict TIC/XIC to a **retention-time window** | `rt=120,600` | `start,end` in **seconds**; optional; applies to `chrom=tic`, `xic`, `xicmz` (ignored for stored chromatograms) |
 
-Precedence on apply: `xic` > `chrom`; `scan` > `spectrum`. `tab` decides which the recipient *sees*
-first, but selection state is applied regardless so switching tabs shows it too.
+**Generate-on-the-fly** (hand-authored links). A chromatogram param alone computes and renders the
+chromatogram — no `tab=` needed:
+- **TIC** needs nothing but optionally an RT window: `chrom=tic` [`&rt=start,end`].
+- **XIC** needs an m/z window — either a range (`xicmz=lo,hi`) or centre+delta (`xic=mz,delta`) —
+  plus an optional RT window.
+
+Precedence on apply: m/z window `xicmz` > `xic` > `chrom`; `scan` > `spectrum`. **Active tab**: an
+explicit `tab=` wins; otherwise a chromatogram param lands on **chromatograms** (priority), else a
+spectrum param lands on **spectra**, else summary. When **both** a spectrum and a chromatogram are
+set, both are applied (the spectrum stays selected) but the chromatogram is shown first; switching to
+Spectra then shows the selected spectrum.
 
 Examples:
 ```
 …/mzPeakExplorer/?file=<url>&tab=spectra&scan=229
-…/mzPeakExplorer/?file=<url>&tab=chromatograms&xic=445.12,0.01
-…/mzPeakExplorer/?file=<url>&tab=spectra&ms=2&scan=1024
+…/mzPeakExplorer/?file=<url>&chrom=tic&rt=120,600
+…/mzPeakExplorer/?file=<url>&xicmz=445.0,445.3
+…/mzPeakExplorer/?file=<url>&xic=445.12,0.01&rt=120,600
+…/mzPeakExplorer/?file=<url>&scan=10002&xic=445.12,0.01   # XIC shown, scan 10002 selected
 ```
 
 ---

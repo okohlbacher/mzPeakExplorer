@@ -225,6 +225,9 @@ type State = {
   chrom: ChromPoint[] | null;
   chromLoading: boolean;
   xicParams: XicParams | null;
+  /** Retention-time window [start, end] (seconds) the current TIC/XIC is
+   *  restricted to, or null for the whole run. Carried in the share link as ?rt=. */
+  chromTimeRange: [number, number] | null;
   /** Id of the stored chromatogram on screen when chromMode === "stored". */
   chromStoredId: string | null;
   storedChromIds: { index: number; id: string }[];
@@ -253,8 +256,11 @@ type Actions = {
   setMsLevelFilter: (level: number | null) => Promise<void>;
   /** Move to the next (+1) / previous (-1) spectrum, honoring the MS-level filter. */
   stepSpectrum: (dir: 1 | -1) => Promise<void>;
-  runXic: (mz: number, tolDa: number) => Promise<void>;
-  showTic: () => Promise<void>;
+  /** Extract an XIC for m/z `mz` ± `tolDa`, optionally restricted to RT window
+   *  `timeRange` (seconds). Passing null/omitting the window spans the whole run. */
+  runXic: (mz: number, tolDa: number, timeRange?: [number, number] | null) => Promise<void>;
+  /** Build the TIC, optionally restricted to RT window `timeRange` (seconds). */
+  showTic: (timeRange?: [number, number] | null) => Promise<void>;
   /** Show a stored chromatogram (e.g. the TIC) by index or id; used by ?chrom= deep links. */
   showStoredChromatogram: (idOrIndex: string) => Promise<boolean>;
   /** Jump to the spectrum with this native scan number (from its id); used by ?scan= deep links. */
@@ -291,6 +297,7 @@ const initial: State = {
   spectrumLoading: false,
   chromMode: "tic",
   chrom: null,
+  chromTimeRange: null,
   chromLoading: false,
   xicParams: null,
   chromStoredId: null,
@@ -348,8 +355,11 @@ export const useStore = create<State & Actions>((set, get) => ({
     set({ browseInited: true });
     const n = get().summary?.numSpectra ?? 0;
     if (n > 0) void get().selectSpectrum(get().selectedIndex ?? 0);
+    // Seed the default TIC ONLY when no chromatogram is already in play — a
+    // deep-linked XIC / stored chromatogram (chromMode !== "tic", or a TIC already
+    // built) must not be clobbered when the Chromatograms tab mounts.
     const cheap = cheapTic(get().spectra);
-    if (cheap) set({ chromMode: "tic", chrom: cheap });
+    if (cheap && get().chromMode === "tic" && !get().chrom) set({ chrom: cheap });
   },
 
   async selectSpectrum(index) {
@@ -455,11 +465,12 @@ export const useStore = create<State & Actions>((set, get) => ({
     }
   },
 
-  async runXic(mz, tolDa) {
+  async runXic(mz, tolDa, timeRange = null) {
     const r = reader;
     if (!r) return;
     const gen = loadGen;
-    set({ chromMode: "xic", chromLoading: true, xicParams: { mz, tolDa } });
+    const tr = normalizeTimeRange(timeRange);
+    set({ chromMode: "xic", chromLoading: true, xicParams: { mz, tolDa }, chromTimeRange: tr });
     try {
       // The data source (profile vs centroid) comes from the representation
       // counts, which are only known after the scan — without it a centroid-only
@@ -467,7 +478,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       if (!get().scanned) await get().computeBreakdown();
       if (gen !== loadGen) return; // a newer file loaded
       const useProfile = (get().summary?.representationCounts.centroid ?? 0) === 0;
-      const points = await priorityRead(() => extractChromatogram(r, { mz, tolDa, useProfile }));
+      const points = await priorityRead(() => extractChromatogram(r, { mz, tolDa, timeRange: tr, useProfile }));
       if (gen !== loadGen) return;
       set({ chrom: points, chromLoading: false, error: null });
     } catch (err) {
@@ -478,11 +489,12 @@ export const useStore = create<State & Actions>((set, get) => ({
     }
   },
 
-  async showTic() {
+  async showTic(timeRange = null) {
     const r = reader;
     if (!r) return;
     const gen = loadGen;
-    set({ chromMode: "tic", chromLoading: true, xicParams: null });
+    const tr = normalizeTimeRange(timeRange);
+    set({ chromMode: "tic", chromLoading: true, xicParams: null, chromTimeRange: tr });
     try {
       // Need the per-spectrum index (promoted TIC column) — scan if not done.
       if (!get().scanned) await get().computeBreakdown();
@@ -492,7 +504,7 @@ export const useStore = create<State & Actions>((set, get) => ({
         set({ chromLoading: false });
         return;
       }
-      const tic = await buildTic(r, get().spectra);
+      const tic = await buildTic(r, get().spectra, tr);
       if (gen !== loadGen) return;
       if (tic === null) {
         set({ chromLoading: false });
@@ -537,6 +549,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       chromMode: "stored",
       chromStoredId: match.id,
       xicParams: null,
+      chromTimeRange: null,
       chromLoading: true,
       error: null,
     });
@@ -875,15 +888,25 @@ function cheapTic(rows: SpectrumIndexRow[]): ChromPoint[] | null {
 async function buildTic(
   r: Reader,
   rows: SpectrumIndexRow[],
+  timeRange: [number, number] | null = null,
 ): Promise<ChromPoint[] | null> {
   const cheap = cheapTic(rows);
-  if (cheap) return cheap;
+  // The cheap path is metadata-only, so a time window is just a post-filter.
+  if (cheap) return timeRange ? cheap.filter((p) => p.time >= timeRange[0] && p.time <= timeRange[1]) : cheap;
   if (rows.length > AUTO_SCAN_LIMIT) return null; // too expensive to sum
   const useProfile = rows.some((row) => row.representation !== "centroid");
-  const all = await priorityRead(() => extractChromatogram(r, { useProfile }));
+  const all = await priorityRead(() => extractChromatogram(r, { timeRange, useProfile }));
   // Restrict the summed trace to MS1 spectra.
   const ms1 = new Set(rows.filter((row) => row.msLevel === 1).map((row) => row.index));
   return ms1.size > 0 ? all.filter((p) => ms1.has(p.index)) : all;
+}
+
+/** Validate a RT window: finite, ordered, positive-width — else null (whole run). */
+function normalizeTimeRange(tr: [number, number] | null | undefined): [number, number] | null {
+  if (!tr) return null;
+  const [a, b] = tr;
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null;
+  return [a, b];
 }
 
 /** Read a stored chromatogram by index (used by the Browse stored-chrom picker).

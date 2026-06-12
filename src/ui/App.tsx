@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { useStore, type Tab } from "../state/store";
-import { buildShareUrl, parseViewParams, type ViewState } from "./shareView";
+import { buildShareUrl, parsePair, parseViewParams, type ViewState } from "./shareView";
 import { AppHeader, Badge, Button, Logo, SideNav, type NavItem } from "./components";
 import { DEMO_URL, IdleLoader } from "./FileLoader";
 import { SettingsMenu } from "./SettingsMenu";
@@ -30,6 +30,7 @@ const NAV: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "chromatograms", label: "Chromatograms", icon: <ChartSpline size={17} /> },
   { id: "structure", label: "Structure", icon: <FolderTree size={17} /> },
 ];
+
 
 /** File mini-inspector pinned to the rail bottom — mirrors mzPeakIV's StatsPanel. */
 function MiniInspector() {
@@ -119,9 +120,12 @@ export function App() {
     deepLinkDone.current = true;
     const v = parseViewParams(window.location.search);
     pendingTarget.current = v;
-    // Defer the background preloader when a spectrum is deep-linked, so that
-    // spectrum loads first instead of queuing behind the preloader over HTTP.
-    const deferPreload = v.scan != null || v.spectrum != null;
+    // Defer the background preloader when a spectrum OR a chromatogram is
+    // deep-linked, so that target loads first instead of queuing behind the
+    // preloader over HTTP (a TIC/XIC extraction is itself a large read).
+    const deferPreload =
+      v.scan != null || v.spectrum != null ||
+      v.xic != null || v.xicmz != null || v.chrom != null;
     if (v.file && /^https?:\/\//i.test(v.file)) void openUrl(v.file, { deferPreload });
   }, [openUrl]);
 
@@ -134,27 +138,61 @@ export function App() {
     if (!v) return;
     targetApplied.current = true;
     void (async () => {
-      if (v.tab) setTab(v.tab as Tab);
+      // A chromatogram is requested if any chrom-generating param is present.
+      const wantChrom = v.xic != null || v.xicmz != null || v.chrom != null;
+      const wantSpectrum = v.scan != null || v.spectrum != null;
+      // Active tab: an explicit ?tab= wins (preserves existing share links);
+      // otherwise a chromatogram param has priority over a spectrum, which has
+      // priority over the summary default.
+      const targetTab: Tab | undefined = v.tab
+        ? (v.tab as Tab)
+        : wantChrom
+          ? "chromatograms"
+          : wantSpectrum
+            ? "spectra"
+            : undefined;
+      if (targetTab) setTab(targetTab); // early, for first paint
       if (v.ms != null && /^\d+$/.test(v.ms)) await setMsLevelFilter(Number(v.ms));
-      // Selection unless explicitly landing on the chromatograms tab. (Loaded
-      // before the preloader starts — see deferPreload above.)
-      if (v.tab !== "chromatograms") {
+
+      // Both a spectrum AND a chromatogram may be set: apply both so each view is
+      // ready, but render the one with priority first. The spectrum stays
+      // selected, so switching to Spectra shows it. (Loaded before the preloader
+      // starts — see deferPreload above.)
+      const applySpectrum = async () => {
         if (v.scan != null) await selectByScanNumber(Number(v.scan));
         else if (v.spectrum != null && /^\d+$/.test(v.spectrum)) await selectSpectrum(Number(v.spectrum));
-        // Restore the spectrum m/z zoom after the spectrum has loaded.
         if (v.mz != null) {
           const [lo, hi] = v.mz.split(",").map(Number);
           if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) setSpectrumZoom([lo, hi]);
         }
-      }
-      // Chromatogram unless explicitly landing on the spectra tab.
-      if (v.tab !== "spectra") {
+      };
+      // Try the m/z forms in priority order, falling through when a higher-priority
+      // one is malformed (so `?xicmz=bad&xic=445,0.01` still draws the XIC).
+      const applyChrom = async () => {
+        const rt = parsePair(v.rt); // RT window (seconds) — applies to TIC or XIC
+        const range = parsePair(v.xicmz); // explicit m/z range, validated + ascending
+        if (range) { await runXic((range[0] + range[1]) / 2, (range[1] - range[0]) / 2, rt); return; }
         if (v.xic != null) {
           const [mz, tol] = v.xic.split(",").map(Number);
-          if (Number.isFinite(mz) && Number.isFinite(tol)) await runXic(mz, tol);
-        } else if (v.chrom === "tic") await showTic();
-        else if (v.chrom != null) await showStoredChromatogram(v.chrom);
+          if (Number.isFinite(mz) && Number.isFinite(tol) && tol > 0) { await runXic(mz, tol, rt); return; }
+        }
+        if (v.chrom === "tic") { await showTic(rt); return; }
+        if (v.chrom != null) await showStoredChromatogram(v.chrom);
+      };
+
+      // Render the priority view's data first for the fastest first paint.
+      if (targetTab === "chromatograms") {
+        if (wantChrom) await applyChrom();
+        if (wantSpectrum) await applySpectrum();
+      } else {
+        if (wantSpectrum) await applySpectrum();
+        if (wantChrom) await applyChrom();
       }
+      // Re-assert the intended tab LAST: selectByScanNumber() forces "spectra" and
+      // showStoredChromatogram() forces "chromatograms" as side effects, which
+      // would otherwise override the computed target (e.g. ?scan=…&xic=… must end
+      // on Chromatograms; ?tab=chromatograms&scan=… must stay on Chromatograms).
+      if (targetTab) setTab(targetTab);
       // The deep-linked target is in view — now let buffering begin.
       startPreload();
     })();
@@ -177,6 +215,7 @@ export function App() {
       chromMode: s.chromMode,
       xic: s.xicParams ? { mz: s.xicParams.mz, tolDa: s.xicParams.tolDa } : null,
       chromStoredId: s.chromStoredId,
+      chromTimeRange: s.chromTimeRange,
       spectrumZoom: s.spectrumZoom,
     };
     const link = buildShareUrl(view, window.location.origin, window.location.pathname);
